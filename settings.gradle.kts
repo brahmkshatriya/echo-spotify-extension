@@ -16,6 +16,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "extension"
+rootProject.name = "Spotify Extension"
 include(":app")
 include(":ext")

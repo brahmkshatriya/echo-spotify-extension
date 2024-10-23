@@ -4,6 +4,7 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 plugins {
     id("java-library")
     id("org.jetbrains.kotlin.jvm")
+    kotlin("plugin.serialization") version "1.9.22"
     id("com.gradleup.shadow") version "8.3.0"
 }
 
