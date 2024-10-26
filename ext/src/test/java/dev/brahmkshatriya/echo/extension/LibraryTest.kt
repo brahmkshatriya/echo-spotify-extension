@@ -18,17 +18,18 @@ import org.junit.Test
 @ExperimentalCoroutinesApi
 class LibraryTest {
     private val extension = SpotifyExtension()
-    private val searchQuery = "Skrillex"
 
     private val mainThreadSurrogate = newSingleThreadContext("UI thread")
     private val token = System.getenv("SPOTIFY_TOKEN")!!
+    private val user = User(token, "")
+
     @Before
     fun setUp() {
         Dispatchers.setMain(mainThreadSurrogate)
         extension.setSettings(MockedSettings())
         runBlocking {
             extension.onExtensionSelected()
-            extension.onSetLoginUser(User(token, ""))
+            extension.onSetLoginUser(user)
         }
     }
 
@@ -43,7 +44,6 @@ class LibraryTest {
         block.invoke(this)
         println("\n")
     }
-
 
     @Test
     fun testCurrentUser() = testIn("Testing current user") {
@@ -63,13 +63,22 @@ class LibraryTest {
     }
 
     @Test
-    fun testSearch() = testIn("Testing Empty Search") {
+    fun testSearchEmpty() = testIn("Testing Empty Search") {
         val tab = extension.searchTabs(null).firstOrNull()
         val feed = extension.searchFeed(null, tab)
         val shelves = feed.loadAll()
         val shelf = shelves.first() as Shelf.Lists.Categories
-        val load = shelf.list.first().items!!.loadAll()
+        val load = shelf.list.first().items!!.loadFirst()
         load.forEach { it.print() }
     }
 
+    private val searchQuery = "Skrillex"
+    @Test
+    fun testSearch() = testIn("Testing Search") {
+        val tabs = extension.searchTabs(searchQuery)
+        println(tabs)
+        val feed = extension.searchFeed(searchQuery, tabs.randomOrNull())
+        val shelves = feed.loadAll()
+        shelves.forEach { it.print() }
+    }
 }

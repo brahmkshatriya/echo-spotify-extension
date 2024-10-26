@@ -12,12 +12,7 @@ import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.common.settings.Setting
 import dev.brahmkshatriya.echo.common.settings.Settings
-import dev.brahmkshatriya.echo.extension.SpotifyApi.Companion.applyPagePagination
-import dev.brahmkshatriya.echo.extension.SpotifyApi.Companion.applySectionPagination
 import dev.brahmkshatriya.echo.extension.SpotifyApi.Companion.userAgent
-import dev.brahmkshatriya.echo.extension.models.BrowseAll
-import dev.brahmkshatriya.echo.extension.models.SpotifyUser
-import kotlinx.serialization.json.buildJsonObject
 import java.net.HttpCookie
 
 class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClient {
@@ -32,6 +27,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClie
     }
 
     private val api by lazy { SpotifyApi(setting) }
+    private val spotifyQuery by lazy { Query(api) }
     private suspend fun <T> withAuth(block: suspend SpotifyApi.() -> T): T {
         if (api.token == null) throw ClientException.LoginRequired()
         return api.block()
@@ -44,10 +40,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClie
 
     override suspend fun getCurrentUser(): User? {
         return if (api.token == null) null
-        else api.query<SpotifyUser>(
-            "profileAttributes",
-            "53bcb064f6cd18c23f752bc324a791194d20df612d8e1239c735144ab0399ced"
-        ).toUser()
+        else spotifyQuery.profileAttributes().toUser()
     }
 
     override suspend fun onLoginWebviewStop(url: String, data: String): List<User> {
@@ -77,29 +70,52 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClie
         return emptyList()
     }
 
-
     private var oldSearch: PagedData<Shelf>? = null
-    private fun getBrowsePage() = PagedData.Single {
-        api.query<BrowseAll>(
-            "browseAll",
-            "cd6fcd0ce9d1849477645646601a6d444597013355467e24066dad2c1dc9b740",
-            buildJsonObject {
-                applyPagePagination(0, 10)
-                applySectionPagination(0, 99)
-            }
-        ).data.browseStart.sections.toShelves(api)
+    private fun getBrowsePage(): PagedData<Shelf> = PagedData.Single {
+        spotifyQuery.browseAll().data.browseStart.sections.toShelves(spotifyQuery)
     }
 
     override fun searchFeed(query: String?, tab: Tab?): PagedData<Shelf> {
         if (query == null) return getBrowsePage()
-        if (tab == null) return oldSearch ?: getBrowsePage()
-        TODO()
+        if (tab == null || tab.id == "ALL") return oldSearch ?: getBrowsePage()
+        return paged { offset ->
+            when (tab.id) {
+                "ARTISTS" ->
+                    spotifyQuery.searchArtist(query, offset).data.searchV2.artists.toItemShelves()
+
+                "TRACKS" ->
+                    spotifyQuery.searchArtist(query, offset).data.searchV2.tracksV2.toItemShelves()
+
+                "ALBUMS" ->
+                    spotifyQuery.searchAlbum(query, offset).data.searchV2.albumsV2.toItemShelves()
+
+                "PLAYLISTS" ->
+                    spotifyQuery.searchAlbum(query, offset).data.searchV2.playlists.toItemShelves()
+
+                "GENRES" ->
+                    spotifyQuery.searchAlbum(query, offset).data.searchV2.genres
+                        .toCategoryShelves(spotifyQuery)
+
+                "PODCASTS" ->
+                    spotifyQuery.searchAlbum(query, offset).data.searchV2.podcasts.toItemShelves()
+
+                "EPISODES" ->
+                    spotifyQuery.searchAlbum(query, offset).data.searchV2.episodes.toItemShelves()
+
+                "USERS" ->
+                    spotifyQuery.searchAlbum(query, offset).data.searchV2.users.toItemShelves()
+
+                else -> emptyList<Shelf>() to null
+            }
+        }
     }
 
     override suspend fun searchTabs(query: String?): List<Tab> {
-        if (query == null) return emptyList()
-        else {
-            TODO()
-        }
+        if (query.isNullOrBlank()) return emptyList()
+        val (shelves, tabs) = spotifyQuery.searchDesktop(query).data.searchV2
+            .toShelvesAndTabs(spotifyQuery)
+        oldSearch = shelves
+        return tabs
     }
 }
+

@@ -6,28 +6,29 @@ import kotlinx.serialization.json.JsonElement
 
 @Serializable
 data class Browse (
-    val data: BrowseData,
-)
+    val data: Data,
+) {
 
-@Serializable
-data class BrowseData (
-    val browse: BrowseClass
-)
+    @Serializable
+    data class Data(
+        val browse: BrowseClass
+    )
 
-@Serializable
-data class BrowseClass (
-    @SerialName("__typename")
-    val typename: ContentDataTypename? = null,
+    @Serializable
+    data class BrowseClass(
+        @SerialName("__typename")
+        val typename: String? = null,
 
-    val header: Header? = null,
-    val sections: Sections,
-    val uri: String? = null
-)
+        val header: Header? = null,
+        val sections: Sections,
+        val uri: String? = null
+    )
 
-@Serializable
-data class Header (
-    val backgroundImage: JsonElement? = null,
-    val color: Color? = null,
-    val subtitle: JsonElement? = null,
-    val title: Title? = null
-)
+    @Serializable
+    data class Header(
+        val backgroundImage: JsonElement? = null,
+        val color: Color? = null,
+        val subtitle: JsonElement? = null,
+        val title: Title? = null
+    )
+}

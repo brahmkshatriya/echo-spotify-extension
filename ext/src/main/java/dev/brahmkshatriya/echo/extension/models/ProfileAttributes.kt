@@ -3,18 +3,17 @@ package dev.brahmkshatriya.echo.extension.models
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class BrowseAll (
-    val data: Data,
+data class ProfileAttributes(
+    val data: Data
 ) {
 
     @Serializable
     data class Data(
-        val browseStart: BrowseStart
+        val me: Me
     )
 
     @Serializable
-    data class BrowseStart(
-        val sections: Sections,
-        val uri: String
+    data class Me(
+        val profile: Profile
     )
 }

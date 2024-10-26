@@ -3,8 +3,6 @@ package dev.brahmkshatriya.echo.extension
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import dev.brahmkshatriya.echo.common.settings.Settings
 import kotlinx.io.IOException
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
@@ -17,8 +15,12 @@ import java.net.URLEncoder
 class SpotifyApi(
     val settings: Settings
 ) {
+    private val auth = Authentication(this)
     var token: String? = null
-    val auth = Authentication(this)
+        set(value) {
+            field = value
+            auth.clearToken()
+        }
     val json = Json()
 
     private val client = OkHttpClient.Builder()
@@ -33,24 +35,35 @@ class SpotifyApi(
         .build()
 
     suspend inline fun <reified T> query(
-        operationName: String, persistedQuery: String, variables: JsonObject = buildJsonObject { }
-    ): T {
+        operationName: String,
+        persistedQuery: String,
+        variables: JsonObject = buildJsonObject { },
+        print: Boolean = false
+    ) = json.decode<T>(
+        queryRaw(operationName, persistedQuery, variables).also { if (print) println(it) }
+    )
+
+    suspend fun queryRaw(
+        operationName: String,
+        persistedQuery: String,
+        variables: JsonObject = buildJsonObject { }
+    ): String {
         auth.checkToken()
         val builder = StringBuilder("https://api-partner.spotify.com/pathfinder/v1/query")
-            .append("?operationName=$operationName")
+            .append("?operationName=${operationName}")
             .append("&variables=${urlEncode(variables)}")
             .append("&extensions=${extensions(persistedQuery)}")
         val request = Request.Builder().url(builder.toString()).build()
         val response = callGetBody(request)
-
-        return if (response.startsWith('{')) json.decode<T>(response)
-        else { throw IOException("Invalid response: $response") }
+        return if (response.startsWith('{')) response else {
+            throw IOException("Invalid response: $response")
+        }
     }
 
-    inline fun <reified T> urlEncode(data: T): String =
+    private fun urlEncode(data: JsonObject): String =
         URLEncoder.encode(json.encode(data), "UTF-8")
 
-    fun extensions(persistedQuery: String): String {
+    private fun extensions(persistedQuery: String): String {
         val extensions = buildJsonObject {
             putJsonObject("persistedQuery") {
                 put("version", 1)

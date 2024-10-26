@@ -32,6 +32,13 @@ class Authentication(
         if (accessToken == null || System.currentTimeMillis() > expiresIn) createAccessToken()
     }
 
+    fun clearToken() {
+        accessToken = null
+        expiresIn = 0
+        api.settings.putString("token", null)
+        api.settings.putString("tokenExp", null)
+    }
+
     @Serializable
     data class TokenResponse(
         val clientId: String,
