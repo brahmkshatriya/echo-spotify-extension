@@ -1,4 +1,4 @@
-package dev.brahmkshatriya.echo.extension.models
+package dev.brahmkshatriya.echo.extension.spotify.models
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
@@ -62,6 +62,29 @@ sealed class Item {
         val playability: Playability? = null,
         val type: String? = null,
     ) : Item()
+
+    @Serializable
+    @SerialName("PreRelease")
+    data class PreRelease(
+        @SerialName("__typename")
+        override val typename: String,
+
+        val preReleaseContent: Content? = null,
+        val preSaved : Boolean? = null,
+        val releaseDate: ReleaseDate? = null,
+        val timezone: String? = null,
+        val uri: String? = null,
+    ) : Item() {
+        @Serializable
+        data class Content(
+            val artists: Artists? = null,
+            val coverArt: Artwork? = null,
+            val name: String? = null,
+            val type: String? = null,
+            val uri: String? = null,
+        )
+    }
+
 
     @Serializable
     @SerialName("Artist")

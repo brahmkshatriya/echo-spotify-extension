@@ -1,4 +1,4 @@
-package dev.brahmkshatriya.echo.extension
+package dev.brahmkshatriya.echo.extension.spotify
 
 import kotlinx.serialization.Serializable
 import okhttp3.Request
@@ -9,10 +9,10 @@ class Authentication(
     var accessToken: String? = null
     private var expiresIn: Long = 0
     private suspend fun createAccessToken() {
-        val token = api.settings.getString("token")
-        val tokenExp = api.settings.getString("tokenExp")?.toLongOrNull() ?: 0
+        val token = api.cache.accessToken
+        val tokenExp = api.cache.accessTokenExpiration ?: 0
         if (accessToken == null && token != null && tokenExp > System.currentTimeMillis()) {
-            accessToken = api.settings.getString("token")
+            accessToken = token
             expiresIn = tokenExp
             return
         }
@@ -24,8 +24,8 @@ class Authentication(
         }
         expiresIn = response.accessTokenExpirationTimestampMs
         accessToken = response.accessToken
-        api.settings.putString("token", accessToken)
-        api.settings.putString("tokenExp", expiresIn.toString())
+        api.cache.accessToken = accessToken
+        api.cache.accessTokenExpiration = expiresIn
     }
 
     suspend fun checkToken() {
@@ -35,8 +35,8 @@ class Authentication(
     fun clearToken() {
         accessToken = null
         expiresIn = 0
-        api.settings.putString("token", null)
-        api.settings.putString("tokenExp", null)
+        api.cache.accessToken = null
+        api.cache.accessTokenExpiration = null
     }
 
     @Serializable

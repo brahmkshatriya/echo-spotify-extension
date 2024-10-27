@@ -1,16 +1,16 @@
-package dev.brahmkshatriya.echo.extension
+package dev.brahmkshatriya.echo.extension.spotify
 
-import dev.brahmkshatriya.echo.extension.SpotifyApi.Companion.applyPagePagination
-import dev.brahmkshatriya.echo.extension.SpotifyApi.Companion.applySectionPagination
-import dev.brahmkshatriya.echo.extension.models.Browse
-import dev.brahmkshatriya.echo.extension.models.BrowseAll
-import dev.brahmkshatriya.echo.extension.models.ProfileAttributes
-import dev.brahmkshatriya.echo.extension.models.SearchDesktop
+import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.applyPagePagination
+import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.applySectionPagination
+import dev.brahmkshatriya.echo.extension.spotify.models.Browse
+import dev.brahmkshatriya.echo.extension.spotify.models.BrowseAll
+import dev.brahmkshatriya.echo.extension.spotify.models.ProfileAttributes
+import dev.brahmkshatriya.echo.extension.spotify.models.SearchDesktop
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-class Query(
+class Queries(
     private val api: SpotifyApi
 ) {
 

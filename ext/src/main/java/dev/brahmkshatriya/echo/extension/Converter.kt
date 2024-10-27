@@ -13,19 +13,43 @@ import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
-import dev.brahmkshatriya.echo.extension.models.Artwork
-import dev.brahmkshatriya.echo.extension.models.Item
-import dev.brahmkshatriya.echo.extension.models.Item.Wrapper
-import dev.brahmkshatriya.echo.extension.models.ProfileAttributes
-import dev.brahmkshatriya.echo.extension.models.SearchDesktop
-import dev.brahmkshatriya.echo.extension.models.Sections
-import dev.brahmkshatriya.echo.extension.models.Sections.ItemsItem
-import dev.brahmkshatriya.echo.extension.models.Sections.SectionItem
+import dev.brahmkshatriya.echo.common.settings.Settings
+import dev.brahmkshatriya.echo.extension.spotify.Cache
+import dev.brahmkshatriya.echo.extension.spotify.Queries
+import dev.brahmkshatriya.echo.extension.spotify.models.Artwork
+import dev.brahmkshatriya.echo.extension.spotify.models.Item
+import dev.brahmkshatriya.echo.extension.spotify.models.Item.Wrapper
+import dev.brahmkshatriya.echo.extension.spotify.models.ProfileAttributes
+import dev.brahmkshatriya.echo.extension.spotify.models.SearchDesktop
+import dev.brahmkshatriya.echo.extension.spotify.models.Sections
+import dev.brahmkshatriya.echo.extension.spotify.models.Sections.ItemsItem
+import dev.brahmkshatriya.echo.extension.spotify.models.Sections.SectionItem
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
-fun Sections.toShelves(query: Query): List<Shelf> {
+fun Settings.toCache(): Cache {
+    return object : Cache {
+        override var accessToken : String?
+            get() = getString("accessToken")
+            set(value) {
+                putString("accessToken", value)
+            }
+
+        override var accessTokenExpiration: Long?
+            get() = getString("accessTokenExpiration")?.toLongOrNull()
+            set(value) {
+                putString("accessTokenExpiration", value.toString())
+            }
+
+    }
+}
+
+fun Sections.toShelves(queries: Queries): List<Shelf> {
     return items?.mapNotNull { item ->
         if (item.data!!.typename == Sections.Typename.BrowseRelatedSectionData)
-            return@mapNotNull item.toCategory(query)
+            return@mapNotNull item.toCategory(queries)
 
         val title = item.data.title?.transformedLabel!!
         when (item.data.typename) {
@@ -37,7 +61,7 @@ fun Sections.toShelves(query: Query): List<Shelf> {
             Sections.Typename.BrowseGridSectionData -> {
                 Shelf.Lists.Categories(
                     title = title,
-                    list = item.sectionItems?.items?.mapNotNull { it.toCategory(query) }!!,
+                    list = item.sectionItems?.items?.mapNotNull { it.toCategory(queries) }!!,
                     type = Shelf.Lists.Type.Grid
                 )
             }
@@ -48,7 +72,7 @@ fun Sections.toShelves(query: Query): List<Shelf> {
     }!!
 }
 
-private fun SectionItem.toCategory(api: Query): Shelf.Category? {
+private fun SectionItem.toCategory(api: Queries): Shelf.Category? {
     val item = sectionItems?.items?.firstOrNull() ?: return null
     return item.toCategory(api)
 }
@@ -70,6 +94,19 @@ private fun Item.toMediaItem(): EchoMediaItem? {
             } ?: listOf(),
             cover = coverArt?.toImageHolder()
         ).toMediaItem()
+
+        is Item.PreRelease -> Album(
+            id = preReleaseContent?.uri ?: return null,
+            title = preReleaseContent.name ?: return null,
+            subtitle = releaseDate?.isoString?.toTimeString(timezone),
+            artists = preReleaseContent.artists?.items?.mapNotNull {
+                val id = it.uri ?: return@mapNotNull null
+                val name = it.profile?.name ?: return@mapNotNull null
+                Artist(id, name, it.profile.avatar?.toImageHolder())
+            } ?: listOf(),
+            cover = preReleaseContent.coverArt?.toImageHolder()
+        ).toMediaItem()
+
 
         is Item.Playlist -> Playlist(
             id = uri ?: return null,
@@ -134,8 +171,31 @@ private fun Item.toMediaItem(): EchoMediaItem? {
             cover = avatar?.toImageHolder()
         ).toMediaItem()
 
-        else -> null
+
+        is Item.BrowseClientFeature -> null
+        is Item.BrowseSectionContainer -> null
+        is Item.Genre -> null
+        is Item.NotFound -> null
     }
+}
+
+private fun String.toTimeString(timezone: String?): String? {
+    val locale = Locale.ENGLISH
+    val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", locale)
+    formatter.timeZone = TimeZone.getTimeZone(timezone ?: return null)
+    val targetTime = formatter.parse(this)
+    val currentTime = Date()
+    val duration = targetTime.time - currentTime.time
+
+    val days = duration / (1000 * 60 * 60 * 24)
+    val hours = (duration / (1000 * 60 * 60)) % 24
+    val minutes = (duration / (1000 * 60)) % 60
+
+    return StringBuilder().apply {
+        if (days > 0) append(String.format(locale, "%02dd ", days))
+        if (hours > 0) append(String.format(locale, "%02dh ", hours))
+        if (minutes > 0) append(String.format(locale, "%02dm ", minutes))
+    }.toString()
 }
 
 val htmlRegex = Regex("<[^>]*>")
@@ -155,16 +215,16 @@ fun <T : Any> paged(
     Page(data, next?.toString())
 }
 
-fun ItemsItem.toCategory(query: Query): Shelf.Category? {
+fun ItemsItem.toCategory(queries: Queries): Shelf.Category? {
     val uri = uri
     val item = content.data
     if (item !is Item.BrowseSectionContainer) return null
     return Shelf.Category(
         title = item.data?.cardRepresentation?.title?.transformedLabel!!,
         items = paged {
-            val sections = query.browsePage(uri, it).data.browse.sections
+            val sections = queries.browsePage(uri, it).data.browse.sections
             val next = sections.pagingInfo?.nextOffset
-            sections.toShelves(query) to next
+            sections.toShelves(queries) to next
         }
     )
 }
@@ -175,7 +235,8 @@ fun ProfileAttributes.toUser() = User(
     cover = data.me.profile.avatar?.sources?.firstOrNull()?.url?.toImageHolder()
 )
 
-fun SearchDesktop.SearchV2.toShelvesAndTabs(query: Query): Pair<PagedData<Shelf>, List<Tab>> {
+private val filteredCategory = listOf("PODCASTS", "AUDIOBOOKS")
+fun SearchDesktop.SearchV2.toShelvesAndTabs(queries: Queries): Pair<PagedData<Shelf>, List<Tab>> {
     val tabs = listOf(Tab("ALL", "All")) + chipOrder?.items?.map { chip ->
         Tab(chip.typeName!!, chip.typeName.lowercase().replaceFirstChar { it.uppercaseChar() })
     }!!
@@ -190,21 +251,21 @@ fun SearchDesktop.SearchV2.toShelvesAndTabs(query: Query): Pair<PagedData<Shelf>
         podcasts?.toMediaShelf("Podcasts"),
         episodes?.toMediaShelf("Episodes"),
         users?.toMediaShelf("Users"),
-        genres?.toCategoryShelf("Genres", query)
+        genres?.toCategoryShelf("Genres", queries)
     )
-    return PagedData.Single { shelves } to tabs
+    return PagedData.Single { shelves } to tabs.filter { it.id !in filteredCategory }
 }
 
-private fun SearchDesktop.SearchItems.toCategoryShelf(title: String, query: Query): Shelf? {
+private fun SearchDesktop.SearchItems.toCategoryShelf(title: String, queries: Queries): Shelf? {
     if (items.isNullOrEmpty()) return null
-    val items = items.mapNotNull { it.toGenreCategory(query) }
+    val items = items.mapNotNull { it.toGenreCategory(queries) }
     return Shelf.Lists.Categories(title = title, list = items, type = Shelf.Lists.Type.Grid)
 }
 
 fun SearchDesktop.SearchItems?.toItemShelves(): Pair<List<Shelf>, Long?> {
     if (this == null || items == null) return emptyList<Shelf>() to null
     val items = items
-    val next = pageInfo?.nextOffset
+    val next = pagingInfo?.nextOffset
     return items.mapNotNull { item ->
         item.data.toMediaItem()?.toShelf()
     } to next
@@ -213,31 +274,31 @@ fun SearchDesktop.SearchItems?.toItemShelves(): Pair<List<Shelf>, Long?> {
 fun SearchDesktop.TracksV2?.toItemShelves(): Pair<List<Shelf>, Long?> {
     if (this == null || items == null) return emptyList<Shelf>() to null
     val items = items
-    val next = pageInfo?.nextOffset
+    val next = pagingInfo?.nextOffset
     return items.mapNotNull { item ->
         item.item?.toMediaItem()?.toShelf()
     } to next
 }
 
-fun SearchDesktop.SearchItems?.toCategoryShelves(query: Query): Pair<List<Shelf>, Long?> {
+fun SearchDesktop.SearchItems?.toCategoryShelves(queries: Queries): Pair<List<Shelf>, Long?> {
     if (this == null || items == null) return emptyList<Shelf>() to null
     val items = items
-    val next = pageInfo?.nextOffset
+    val next = pagingInfo?.nextOffset
     return items.mapNotNull { item ->
-        item.toGenreCategory(query)
+        item.toGenreCategory(queries)
     } to next
 }
 
-private fun Wrapper.toGenreCategory(query: Query): Shelf.Category? {
+private fun Wrapper.toGenreCategory(queries: Queries): Shelf.Category? {
     val item = data
     if (item !is Item.Genre) return null
     val uri = item.uri!!
     return Shelf.Category(
         title = item.name ?: return null,
         items = paged {
-            val sections = query.browsePage(uri, it).data.browse.sections
+            val sections = queries.browsePage(uri, it).data.browse.sections
             val next = sections.pagingInfo?.nextOffset
-            sections.toShelves(query) to next
+            sections.toShelves(queries) to next
         }
     )
 }

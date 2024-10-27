@@ -1,7 +1,6 @@
-package dev.brahmkshatriya.echo.extension
+package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
-import dev.brahmkshatriya.echo.common.settings.Settings
 import kotlinx.io.IOException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -13,7 +12,7 @@ import okhttp3.Request
 import java.net.URLEncoder
 
 class SpotifyApi(
-    val settings: Settings
+    val cache: Cache
 ) {
     private val auth = Authentication(this)
     var token: String? = null

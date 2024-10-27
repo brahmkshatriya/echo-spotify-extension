@@ -1,4 +1,4 @@
-package dev.brahmkshatriya.echo.extension.models
+package dev.brahmkshatriya.echo.extension.spotify.models
 
 import kotlinx.serialization.Serializable
 
@@ -29,14 +29,14 @@ data class SearchDesktop(
     @Serializable
     data class TracksV2(
         val items: List<ItemWrapperWrapper>? = null,
-        val pageInfo: PagingInfo? = null,
+        val pagingInfo: PagingInfo? = null,
         val totalCount: Long? = null
     )
 
     @Serializable
     data class SearchItems(
         val items: List<Item.Wrapper>? = null,
-        val pageInfo: PagingInfo? = null,
+        val pagingInfo: PagingInfo? = null,
         val totalCount: Long? = null
     )
 

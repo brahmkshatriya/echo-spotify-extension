@@ -72,13 +72,16 @@ class LibraryTest {
         load.forEach { it.print() }
     }
 
-    private val searchQuery = "Skrillex"
+    private val searchQuery = "s"
+
     @Test
     fun testSearch() = testIn("Testing Search") {
         val tabs = extension.searchTabs(searchQuery)
-        println(tabs)
-        val feed = extension.searchFeed(searchQuery, tabs.randomOrNull())
-        val shelves = feed.loadAll()
-        shelves.forEach { it.print() }
+        tabs.forEach {
+            println("Tab: $it")
+            val feed = extension.searchFeed(searchQuery, it)
+            val shelves = feed.loadFirst()
+            shelves.forEach { it.print() }
+        }
     }
 }

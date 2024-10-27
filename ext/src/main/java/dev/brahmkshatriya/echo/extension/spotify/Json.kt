@@ -1,4 +1,4 @@
-package dev.brahmkshatriya.echo.extension
+package dev.brahmkshatriya.echo.extension.spotify
 
 import kotlinx.io.IOException
 import kotlinx.serialization.encodeToString

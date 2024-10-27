@@ -1,4 +1,4 @@
-package dev.brahmkshatriya.echo.extension.models
+package dev.brahmkshatriya.echo.extension.spotify.models
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
