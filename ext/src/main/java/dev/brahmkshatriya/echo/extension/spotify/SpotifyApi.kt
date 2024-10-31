@@ -14,7 +14,7 @@ import java.net.URLEncoder
 class SpotifyApi(
     val cache: Cache
 ) {
-    private val auth = Authentication(this)
+    val auth = Authentication(this)
     var token: String? = null
         set(value) {
             field = value
@@ -24,45 +24,45 @@ class SpotifyApi(
 
     private val client = OkHttpClient.Builder()
         .addInterceptor { chain ->
-            val request = chain.request().newBuilder()
-            request.addHeader(userAgent.first, userAgent.second)
+            val builder = chain.request().newBuilder()
+            builder.addHeader(userAgent.first, userAgent.second)
+            builder.addHeader("Accept", "application/json")
             auth.accessToken?.let {
-                request.addHeader("Authorization", "Bearer $it")
+                builder.addHeader("Authorization", "Bearer $it")
             }
-            chain.proceed(request.build())
+            val request = builder.build()
+            chain.proceed(request)
         }
         .build()
 
-    suspend inline fun <reified T> query(
+    suspend inline fun <reified T> graphQuery(
         operationName: String,
         persistedQuery: String,
         variables: JsonObject = buildJsonObject { },
         print: Boolean = false
-    ) = json.decode<T>(
-        queryRaw(operationName, persistedQuery, variables).also { if (print) println(it) }
-    )
-
-    suspend fun queryRaw(
-        operationName: String,
-        persistedQuery: String,
-        variables: JsonObject = buildJsonObject { }
-    ): String {
-        auth.checkToken()
+    ): T {
         val builder = StringBuilder("https://api-partner.spotify.com/pathfinder/v1/query")
             .append("?operationName=${operationName}")
             .append("&variables=${urlEncode(variables)}")
             .append("&extensions=${extensions(persistedQuery)}")
         val request = Request.Builder().url(builder.toString()).build()
+        return json.decode<T>(
+            queryRaw(request).also { if (print) println(it) }
+        )
+    }
+
+    suspend fun queryRaw(request: Request): String {
+        auth.getToken()
         val response = callGetBody(request)
         return if (response.startsWith('{')) response else {
             throw IOException("Invalid response: $response")
         }
     }
 
-    private fun urlEncode(data: JsonObject): String =
+    fun urlEncode(data: JsonObject): String =
         URLEncoder.encode(json.encode(data), "UTF-8")
 
-    private fun extensions(persistedQuery: String): String {
+    fun extensions(persistedQuery: String): String {
         val extensions = buildJsonObject {
             putJsonObject("persistedQuery") {
                 put("version", 1)

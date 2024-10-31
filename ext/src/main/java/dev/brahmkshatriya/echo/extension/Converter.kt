@@ -10,15 +10,20 @@ import dev.brahmkshatriya.echo.common.models.ImageHolder
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Shelf
+import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.common.settings.Settings
+import dev.brahmkshatriya.echo.extension.spotify.Base62
 import dev.brahmkshatriya.echo.extension.spotify.Cache
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.models.Artwork
+import dev.brahmkshatriya.echo.extension.spotify.models.Canvas
 import dev.brahmkshatriya.echo.extension.spotify.models.Item
 import dev.brahmkshatriya.echo.extension.spotify.models.Item.Wrapper
+import dev.brahmkshatriya.echo.extension.spotify.models.Label
+import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track
 import dev.brahmkshatriya.echo.extension.spotify.models.ProfileAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.SearchDesktop
 import dev.brahmkshatriya.echo.extension.spotify.models.Sections
@@ -31,7 +36,7 @@ import java.util.TimeZone
 
 fun Settings.toCache(): Cache {
     return object : Cache {
-        override var accessToken : String?
+        override var accessToken: String?
             get() = getString("accessToken")
             set(value) {
                 putString("accessToken", value)
@@ -126,25 +131,30 @@ private fun Item.toMediaItem(): EchoMediaItem? {
             subtitle = profile.verified?.let { if (it) "Verified" else null }
         ).toMediaItem()
 
-        is Item.Track -> Track(
-            id = uri ?: return null,
-            title = name ?: return null,
-            artists = artists?.items?.mapNotNull {
-                val id = it.uri ?: return@mapNotNull null
-                val name = it.profile?.name ?: return@mapNotNull null
-                Artist(id, name, it.profile.avatar?.toImageHolder())
-            } ?: listOf(),
-            album = albumOfTrack?.let {
+        is Item.Track -> {
+            val album = albumOfTrack?.let {
                 Album(
                     id = it.uri ?: return@let null,
                     title = it.name ?: return@let null,
                     cover = it.coverArt?.toImageHolder()
                 )
-            },
-            isExplicit = contentRating?.label == "Explicit",
-            duration = duration?.totalMilliseconds,
-            plays = playcount?.toInt()
-        ).toMediaItem()
+            }
+            Track(
+                id = uri ?: return null,
+                title = name ?: return null,
+                cover = album?.cover,
+                artists = artists?.items?.mapNotNull {
+                    val id = it.uri ?: return@mapNotNull null
+                    val name = it.profile?.name ?: return@mapNotNull null
+                    Artist(id, name, it.profile.avatar?.toImageHolder())
+                } ?: listOf(),
+                album = album,
+                isExplicit = contentRating?.label == Label.EXPLICIT,
+                duration = duration?.totalMilliseconds,
+                plays = playcount?.toInt()
+            ).toMediaItem()
+        }
+
 
         is Item.Episode -> Track(
             id = uri ?: return null,
@@ -154,7 +164,7 @@ private fun Item.toMediaItem(): EchoMediaItem? {
             artists = listOfNotNull(
                 (podcastV2?.toMediaItem() as? EchoMediaItem.Profile.ArtistItem)?.artist
             ),
-            isExplicit = contentRating?.label == "Explicit",
+            isExplicit = contentRating?.label == Label.EXPLICIT,
             duration = duration?.totalMilliseconds,
             releaseDate = releaseDate?.isoString,
         ).toMediaItem()
@@ -318,5 +328,72 @@ private fun List<SearchDesktop.ItemWrapperWrapper>?.toTrackShelf(title: String):
     return Shelf.Lists.Tracks(
         title = title,
         list = mapNotNull { (it.item?.toMediaItem() as? EchoMediaItem.TrackItem)?.track }
+    )
+}
+
+fun Canvas.toStreamable(): Streamable? {
+    val canvas = data?.trackUnion?.canvas ?: return null
+    val url = canvas.url ?: return null
+    return Streamable.video(
+        id = url,
+        title = canvas.type ?: return null,
+        quality = 0
+    )
+}
+
+private fun Metadata4Track.Date.toReleaseDate(): String? {
+   val builder = StringBuilder()
+    if (day != null) builder.append("$day-")
+    if (month != null) builder.append("$month-")
+    if (year != null) builder.append("$year")
+    return builder.toString().ifEmpty { null }
+}
+
+fun Metadata4Track.toTrack(
+    decryptionType: Streamable.DecryptionType.Widevine,
+    canvas: Streamable?
+): Track {
+    val id = canonicalUri!!
+    val title = name!!
+    val streamables = file!!.mapNotNull {
+        val url = it.fileId ?: return@mapNotNull null
+        val format = it.format ?: return@mapNotNull null
+        Streamable.audio(
+            id = url,
+            quality = format.qualityRank,
+            title = format.name.replace('_', ' '),
+            decryptionType = decryptionType
+        )
+    }
+    val alb = album?.let { album ->
+        val gid = album.gid ?: return@let null
+        val albumId = Base62.encode(gid)
+        Album(
+            id = "spotify:album:$albumId",
+            title = album.name ?: return@let null,
+            cover = album.coverGroup?.image?.lastOrNull()?.fileId?.let {
+                "https://i.scdn.co/image/$it".toImageHolder()
+            },
+            releaseDate = album.date?.toReleaseDate(),
+        )
+    }
+    return Track(
+        id = id,
+        title = title,
+        cover = alb?.cover,
+        streamables = if (canvas != null) streamables + canvas else streamables,
+        duration = duration,
+        artists = artistWithRole?.mapNotNull {
+            val gid = it.artistGid ?: return@mapNotNull null
+            val artistId = Base62.encode(gid)
+            val name = it.artistName ?: return@mapNotNull null
+            val subtitle = it.role?.split('_')?.joinToString(" ") { s ->
+                s.lowercase().replaceFirstChar { char -> char.uppercaseChar() }
+            }
+            Artist("spotify:artist:$artistId", name, subtitle = subtitle)
+        } ?: listOf(),
+        album = alb,
+        releaseDate = alb?.releaseDate,
+        description = album?.label,
     )
 }

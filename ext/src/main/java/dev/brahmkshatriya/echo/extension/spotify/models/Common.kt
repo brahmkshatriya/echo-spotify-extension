@@ -21,11 +21,11 @@ data class Artwork(
 
 @Serializable
 data class ExtractedColors(
-    val colorDark: ColorDark? = null
+    val colorDark: ColorRaw? = null
 )
 
 @Serializable
-data class ColorDark(
+data class ColorRaw(
     val hex: String? = null,
     val isFallback: Boolean? = null
 )
@@ -49,15 +49,23 @@ data class Profile(
 
 @Serializable
 data class AlbumOfTrack(
-    val coverArt: Artwork? = null,
+    val copyright: Copyright? = null,
+    val courtesyLine: String? = null,
     val id: String? = null,
+    val date: Date? = null,
     val name: String? = null,
-    val uri: String? = null
+    val playability: AlbumOfTrackPlayability? = null,
+    val sharingInfo: SharingInfo? = null,
+    val tracks: Tracks? = null,
+    val type: Type? = null,
+    val uri: String? = null,
+    val coverArt: Artwork? = null
 )
 
 @Serializable
 data class Artists(
-    val items: List<ArtistsItem>? = null
+    val items: List<ArtistsItem>? = null,
+    val totalCount: Long? = null
 )
 
 @Serializable
@@ -89,8 +97,11 @@ data class BackgroundColor(
 
 @Serializable
 data class ContentRating(
-    val label: String? = null
+    val label: Label? = null
 )
+
+@Serializable
+enum class Label { EXPLICIT, NONE }
 
 @Serializable
 data class CardData(
@@ -106,6 +117,8 @@ data class CardRepresentation(
 
 @Serializable
 data class Date(
+    val isoString: String? = null,
+    val precision: String? = null,
     val year: Long? = null
 )
 

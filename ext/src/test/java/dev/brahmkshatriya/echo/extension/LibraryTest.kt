@@ -1,7 +1,9 @@
 package dev.brahmkshatriya.echo.extension
 
 import dev.brahmkshatriya.echo.common.models.Shelf
+import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
+import dev.brahmkshatriya.echo.extension.spotify.Base62
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -11,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert
 import org.junit.Before
 import org.junit.Test
 
@@ -49,6 +52,7 @@ class LibraryTest {
     fun testCurrentUser() = testIn("Testing current user") {
         val user = extension.getCurrentUser()
         println(user)
+        println(extension.queries.metadata4Track("9ddc535dfd344ebbb280514a0d7dc5c3"))
     }
 
     private fun Shelf.print() {
@@ -83,5 +87,25 @@ class LibraryTest {
             val shelves = feed.loadFirst()
             shelves.forEach { it.print() }
         }
+    }
+
+    @Test
+    fun getTrack() = testIn("Get Track") {
+        val track = extension.loadTrack(Track("spotify:track:4NSu2c1qZgHhU67MNkd5Hd", ""))
+        println(track)
+        val streamable = track.audioStreamables.first()
+        println(streamable)
+        val media = extension.getStreamableMedia(streamable)
+        println(media)
+    }
+
+    @Test
+    fun testGid() = testIn("GID Test") {
+        val actual = "4eNGmBfayErwCHSKW3F0ek"
+        val gid = Base62.decode(actual)
+        println(gid)
+        val id = Base62.encode(gid)
+        println(id)
+        Assert.assertEquals(actual, id)
     }
 }

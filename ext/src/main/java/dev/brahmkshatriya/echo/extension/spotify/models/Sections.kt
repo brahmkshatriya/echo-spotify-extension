@@ -32,15 +32,10 @@ data class Sections(
     )
 
     @Serializable
-    enum class Typename(val value: String) {
-        @SerialName("BrowseGenericSectionData")
-        BrowseGenericSectionData("BrowseGenericSectionData"),
-
-        @SerialName("BrowseGridSectionData")
-        BrowseGridSectionData("BrowseGridSectionData"),
-
-        @SerialName("BrowseRelatedSectionData")
-        BrowseRelatedSectionData("BrowseRelatedSectionData");
+    enum class Typename {
+        @SerialName("BrowseGenericSectionData") BrowseGenericSectionData,
+        @SerialName("BrowseGridSectionData") BrowseGridSectionData,
+        @SerialName("BrowseRelatedSectionData") BrowseRelatedSectionData;
     }
 
     @Serializable

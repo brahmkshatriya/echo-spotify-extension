@@ -2,21 +2,33 @@ package dev.brahmkshatriya.echo.extension
 
 import dev.brahmkshatriya.echo.common.clients.ExtensionClient
 import dev.brahmkshatriya.echo.common.clients.LoginClient
+import dev.brahmkshatriya.echo.common.clients.SaveToLibraryClient
 import dev.brahmkshatriya.echo.common.clients.SearchClient
+import dev.brahmkshatriya.echo.common.clients.TrackClient
+import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.helpers.PagedData
+import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.QuickSearch
 import dev.brahmkshatriya.echo.common.models.Request.Companion.toRequest
 import dev.brahmkshatriya.echo.common.models.Shelf
+import dev.brahmkshatriya.echo.common.models.Streamable
+import dev.brahmkshatriya.echo.common.models.Streamable.Audio.Companion.toAudio
+import dev.brahmkshatriya.echo.common.models.Streamable.Media.Companion.toMedia
 import dev.brahmkshatriya.echo.common.models.Tab
+import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.common.settings.Setting
 import dev.brahmkshatriya.echo.common.settings.Settings
+import dev.brahmkshatriya.echo.extension.spotify.Base62
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import java.net.HttpCookie
 
-class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClient {
+class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClient, TrackClient,
+    SaveToLibraryClient {
 
     override suspend fun onExtensionSelected() {}
 
@@ -28,7 +40,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClie
     }
 
     private val api by lazy { SpotifyApi(setting.toCache()) }
-    private val queries by lazy { Queries(api) }
+    val queries by lazy { Queries(api) }
 
     override val loginWebViewInitialUrl =
         "https://accounts.spotify.com/en/login".toRequest(mapOf(userAgent))
@@ -103,6 +115,54 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClie
             .toShelvesAndTabs(queries)
         oldSearch = shelves
         return tabs
+    }
+
+    override fun getShelves(track: Track): PagedData<Shelf> {
+        TODO("Not yet implemented")
+    }
+
+    override suspend fun getStreamableMedia(streamable: Streamable): Streamable.Media {
+        return when(streamable.mediaType){
+            Streamable.MediaType.Audio -> {
+                val url = queries.storageResolve(streamable.id).cdnUrl.first()
+                url.toAudio(mapOf(userAgent)).toMedia()
+            }
+            Streamable.MediaType.Video -> Streamable.Media.WithVideo.Only(streamable.id.toRequest())
+            else -> throw IllegalStateException("Unsupported Streamable : $streamable")
+        }
+    }
+
+    override suspend fun loadTrack(track: Track): Track = coroutineScope {
+        api.token ?: throw ClientException.LoginRequired()
+        val accessToken = api.auth.getToken()
+
+        val canvas = async { queries.canvas(track.id).toStreamable() }
+        val decryptionType = Streamable.DecryptionType.Widevine(
+            "https://spclient.wg.spotify.com/widevine-license/v1/audio/license".toRequest(
+                mapOf("Authorization" to "Bearer $accessToken")
+            ),
+            true
+        )
+        val id = Base62.decode(track.id.substringAfter("spotify:track:"))
+        queries.metadata4Track(id).toTrack(
+            decryptionType,
+            canvas.await()
+        )
+    }
+
+    override suspend fun isSavedToLibrary(mediaItem: EchoMediaItem): Boolean {
+        if (api.token == null) return false
+        val isSaved = queries.areEntitiesInLibrary(mediaItem.id)
+            .data?.lookup?.firstOrNull()?.data?.saved
+        return isSaved ?: false
+    }
+
+    override suspend fun removeFromLibrary(mediaItem: EchoMediaItem) {
+        TODO("Not yet implemented")
+    }
+
+    override suspend fun saveToLibrary(mediaItem: EchoMediaItem) {
+        TODO("Not yet implemented")
     }
 }
 
