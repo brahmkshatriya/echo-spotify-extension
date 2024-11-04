@@ -342,11 +342,23 @@ fun Canvas.toStreamable(): Streamable? {
 }
 
 private fun Metadata4Track.Date.toReleaseDate(): String? {
-   val builder = StringBuilder()
+    val builder = StringBuilder()
     if (day != null) builder.append("$day-")
     if (month != null) builder.append("$month-")
     if (year != null) builder.append("$year")
     return builder.toString().ifEmpty { null }
+}
+
+fun Metadata4Track.Format.isWorking() = when (this) {
+    Metadata4Track.Format.OGG_VORBIS_320 -> false
+    Metadata4Track.Format.OGG_VORBIS_160 -> false
+    Metadata4Track.Format.OGG_VORBIS_96 -> false
+    Metadata4Track.Format.MP4_256_DUAL -> false
+    Metadata4Track.Format.MP4_128_DUAL -> false
+    Metadata4Track.Format.MP4_256 -> false //requires premium?
+    Metadata4Track.Format.MP4_128 -> true
+    Metadata4Track.Format.AAC_24 -> false
+    Metadata4Track.Format.MP3_96 -> false
 }
 
 fun Metadata4Track.toTrack(
@@ -358,6 +370,7 @@ fun Metadata4Track.toTrack(
     val streamables = file!!.mapNotNull {
         val url = it.fileId ?: return@mapNotNull null
         val format = it.format ?: return@mapNotNull null
+        if (!format.isWorking()) return@mapNotNull null
         Streamable.audio(
             id = url,
             quality = format.qualityRank,

@@ -23,7 +23,9 @@ object Base62 {
     fun decode(encoded: String, length: Int = DEFAULT_LENGTH): String {
         val leadingZeros = encoded.takeWhile { it == '0' }.length
         val prepared = translate(encoded.drop(leadingZeros).toByteArray(), lookup)
-        return bytesToHex(ByteArray(leadingZeros) + convert(prepared, TARGET_BASE, STANDARD_BASE, length))
+        return bytesToHex(
+            ByteArray(leadingZeros) + convert(prepared, TARGET_BASE, STANDARD_BASE, length)
+        ).trimStart('0')
     }
 
     private fun translate(indices: ByteArray, dictionary: ByteArray) =

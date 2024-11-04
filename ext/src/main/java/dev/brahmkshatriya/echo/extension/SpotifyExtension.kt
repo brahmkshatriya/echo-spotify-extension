@@ -138,9 +138,8 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClie
 
         val canvas = async { queries.canvas(track.id).toStreamable() }
         val decryptionType = Streamable.DecryptionType.Widevine(
-            "https://spclient.wg.spotify.com/widevine-license/v1/audio/license".toRequest(
-                mapOf("Authorization" to "Bearer $accessToken")
-            ),
+            "https://spclient.wg.spotify.com/widevine-license/v1/audio/license?id=${track.id}"
+                .toRequest(mapOf("Authorization" to "Bearer $accessToken")),
             true
         )
         val id = Base62.decode(track.id.substringAfter("spotify:track:"))

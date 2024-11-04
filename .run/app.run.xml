@@ -66,8 +66,8 @@
       <option name="Android.Gradle.BeforeRunTask" enabled="true" />
     </method>
   </configuration>
-  <configuration default="false" name="app" type="AndroidRunConfigurationType" factoryName="Android App" singleton="true">
-    <module name="extension.app.main" />
+  <configuration default="false" name="app" type="AndroidRunConfigurationType" factoryName="Android App" activateToolWindowBeforeRun="false" singleton="true">
+    <module name="Spotify_Extension.app.main" />
     <option name="DEPLOY" value="true" />
     <option name="DEPLOY_APK_FROM_BUNDLE" value="false" />
     <option name="DEPLOY_AS_INSTANT" value="false" />
@@ -78,7 +78,7 @@
     <option name="CLEAR_APP_STORAGE" value="false" />
     <option name="DYNAMIC_FEATURES_DISABLED_LIST" value="" />
     <option name="ACTIVITY_EXTRA_FLAGS" value="" />
-    <option name="MODE" value="launch_deep_link" />
+    <option name="MODE" value="default_activity" />
     <option name="CLEAR_LOGCAT" value="true" />
     <option name="SHOW_LOGCAT_AUTOMATICALLY" value="true" />
     <option name="TARGET_SELECTION_MODE" value="DEVICE_AND_SNAPSHOT_COMBO_BOX" />
