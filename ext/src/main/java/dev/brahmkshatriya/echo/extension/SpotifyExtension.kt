@@ -12,7 +12,6 @@ import dev.brahmkshatriya.echo.common.models.QuickSearch
 import dev.brahmkshatriya.echo.common.models.Request.Companion.toRequest
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Streamable
-import dev.brahmkshatriya.echo.common.models.Streamable.Audio.Companion.toAudio
 import dev.brahmkshatriya.echo.common.models.Streamable.Media.Companion.toMedia
 import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
@@ -122,29 +121,35 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClie
     }
 
     override suspend fun getStreamableMedia(streamable: Streamable): Streamable.Media {
-        return when(streamable.mediaType){
-            Streamable.MediaType.Audio -> {
+        return when (streamable.type) {
+            Streamable.MediaType.Source -> {
                 val url = queries.storageResolve(streamable.id).cdnUrl.first()
-                url.toAudio(mapOf(userAgent)).toMedia()
+                api.token ?: throw ClientException.LoginRequired()
+                val accessToken = api.auth.getToken()
+                val decryption = Streamable.Decryption.Widevine(
+                    "https://spclient.wg.spotify.com/widevine-license/v1/audio/license?id=${streamable.id}"
+                        .toRequest(mapOf("Authorization" to "Bearer $accessToken")),
+                    true
+                )
+                Streamable.Source.Http(
+                    request = url.toRequest(),
+                    decryption = decryption,
+                ).toMedia()
             }
-            Streamable.MediaType.Video -> Streamable.Media.WithVideo.Only(streamable.id.toRequest())
+
+            Streamable.MediaType.Background ->
+                Streamable.Media.Background(streamable.id.toRequest())
+
             else -> throw IllegalStateException("Unsupported Streamable : $streamable")
         }
     }
 
     override suspend fun loadTrack(track: Track): Track = coroutineScope {
-        api.token ?: throw ClientException.LoginRequired()
-        val accessToken = api.auth.getToken()
-
+        val hasPremium = false
         val canvas = async { queries.canvas(track.id).toStreamable() }
-        val decryptionType = Streamable.DecryptionType.Widevine(
-            "https://spclient.wg.spotify.com/widevine-license/v1/audio/license?id=${track.id}"
-                .toRequest(mapOf("Authorization" to "Bearer $accessToken")),
-            true
-        )
         val id = Base62.decode(track.id.substringAfter("spotify:track:"))
         queries.metadata4Track(id).toTrack(
-            decryptionType,
+            hasPremium,
             canvas.await()
         )
     }

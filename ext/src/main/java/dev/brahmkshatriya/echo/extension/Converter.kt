@@ -334,7 +334,7 @@ private fun List<SearchDesktop.ItemWrapperWrapper>?.toTrackShelf(title: String):
 fun Canvas.toStreamable(): Streamable? {
     val canvas = data?.trackUnion?.canvas ?: return null
     val url = canvas.url ?: return null
-    return Streamable.video(
+    return Streamable.background(
         id = url,
         title = canvas.type ?: return null,
         quality = 0
@@ -349,20 +349,20 @@ private fun Metadata4Track.Date.toReleaseDate(): String? {
     return builder.toString().ifEmpty { null }
 }
 
-fun Metadata4Track.Format.isWorking() = when (this) {
-    Metadata4Track.Format.OGG_VORBIS_320 -> false
-    Metadata4Track.Format.OGG_VORBIS_160 -> false
-    Metadata4Track.Format.OGG_VORBIS_96 -> false
-    Metadata4Track.Format.MP4_256_DUAL -> false
-    Metadata4Track.Format.MP4_128_DUAL -> false
-    Metadata4Track.Format.MP4_256 -> false //requires premium?
+fun Metadata4Track.Format.isWorking(hasPremium: Boolean) = when (this) {
+    Metadata4Track.Format.OGG_VORBIS_320 -> hasPremium
+    Metadata4Track.Format.OGG_VORBIS_160 -> hasPremium
+    Metadata4Track.Format.OGG_VORBIS_96 -> hasPremium
+    Metadata4Track.Format.MP4_256_DUAL -> hasPremium
+    Metadata4Track.Format.MP4_128_DUAL -> hasPremium
+    Metadata4Track.Format.MP4_256 -> hasPremium
     Metadata4Track.Format.MP4_128 -> true
-    Metadata4Track.Format.AAC_24 -> false
+    Metadata4Track.Format.AAC_24 -> hasPremium
     Metadata4Track.Format.MP3_96 -> false
 }
 
 fun Metadata4Track.toTrack(
-    decryptionType: Streamable.DecryptionType.Widevine,
+    hasPremium: Boolean,
     canvas: Streamable?
 ): Track {
     val id = canonicalUri!!
@@ -370,12 +370,11 @@ fun Metadata4Track.toTrack(
     val streamables = file!!.mapNotNull {
         val url = it.fileId ?: return@mapNotNull null
         val format = it.format ?: return@mapNotNull null
-        if (!format.isWorking()) return@mapNotNull null
-        Streamable.audio(
+        if (!format.isWorking(hasPremium)) return@mapNotNull null
+        Streamable.source(
             id = url,
             quality = format.qualityRank,
             title = format.name.replace('_', ' '),
-            decryptionType = decryptionType
         )
     }
     val alb = album?.let { album ->
