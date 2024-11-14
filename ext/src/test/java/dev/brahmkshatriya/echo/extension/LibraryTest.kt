@@ -1,5 +1,7 @@
 package dev.brahmkshatriya.echo.extension
 
+import dev.brahmkshatriya.echo.common.models.Album
+import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
@@ -12,6 +14,7 @@ import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
+import okhttp3.Request
 import org.junit.After
 import org.junit.Assert
 import org.junit.Before
@@ -76,7 +79,7 @@ class LibraryTest {
         load.forEach { it.print() }
     }
 
-    private val searchQuery = "s"
+    private val searchQuery = "hero"
 
     @Test
     fun testSearch() = testIn("Testing Search") {
@@ -93,10 +96,21 @@ class LibraryTest {
     fun getTrack() = testIn("Get Track") {
         val track = extension.loadTrack(Track("spotify:track:4NSu2c1qZgHhU67MNkd5Hd", ""))
         println(track)
-        val streamable = track.audioStreamables.first()
-        println(streamable)
-        val media = extension.getStreamableMedia(streamable)
-        println(media)
+        track.sources.forEach { streamable ->
+            println(streamable)
+            val media = extension.getStreamableMedia(streamable)
+            println(media)
+        }
+    }
+
+    @Test
+    fun getLyrics() = testIn("Get Lyrics") {
+        val lyrics = extension.queries.api.call(
+            Request.Builder()
+                .url("https://spclient.wg.spotify.com/color-lyrics/v2/track/71NTIlx3GOoJdDDChHcMx3/image/https%3A%2F%2Fi.scdn.co%2Fimage%2Fab67616d0000b273b1b4f333c30b954b3ccd4d81?format=json&vocalRemoval=false&market=from_token")
+                .build()
+        )
+        println(lyrics)
     }
 
     @Test
@@ -107,5 +121,25 @@ class LibraryTest {
         val id = Base62.encode(gid)
         println(id)
         Assert.assertEquals(actual, id)
+    }
+
+    @Test
+    fun testPlaylist() = testIn("Playlist Test") {
+        val playlist = extension.loadPlaylist(
+            Playlist("spotify:playlist:6ZBHUwSlPqlvLsw0MKJtLU", "", false)
+        )
+        println(playlist)
+        val tracks = extension.loadTracks(playlist).loadAll()
+        println("Tracks: ${tracks.size}")
+    }
+
+    @Test
+    fun testAlbum() = testIn("Album Test") {
+        val album = extension.loadAlbum(
+            Album("spotify:album:6a6wiQNPcQMV8K17HDKtrC", "")
+        )
+        println(album)
+        val tracks = extension.loadTracks(album).loadAll()
+        println("Tracks: ${tracks.size}")
     }
 }

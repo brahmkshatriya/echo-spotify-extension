@@ -2,10 +2,14 @@ package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.applyPagePagination
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.applySectionPagination
+import dev.brahmkshatriya.echo.extension.spotify.models.AccountAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.AreEntitiesInLibrary
 import dev.brahmkshatriya.echo.extension.spotify.models.Browse
 import dev.brahmkshatriya.echo.extension.spotify.models.BrowseAll
 import dev.brahmkshatriya.echo.extension.spotify.models.Canvas
+import dev.brahmkshatriya.echo.extension.spotify.models.ColorLyrics
+import dev.brahmkshatriya.echo.extension.spotify.models.FetchPlaylist
+import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
 import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track
 import dev.brahmkshatriya.echo.extension.spotify.models.ProfileAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.SearchDesktop
@@ -18,12 +22,17 @@ import kotlinx.serialization.json.putJsonArray
 import okhttp3.Request
 
 class Queries(
-    private val api: SpotifyApi
+    val api: SpotifyApi,
 ) {
 
     suspend fun profileAttributes() = api.graphQuery<ProfileAttributes>(
         "profileAttributes",
         "53bcb064f6cd18c23f752bc324a791194d20df612d8e1239c735144ab0399ced"
+    )
+
+    suspend fun accountAttributes() = api.graphQuery<AccountAttributes>(
+        "accountAttributes",
+        "4fbd57be3c6ec2157adcc5b8573ec571f61412de23bbb798d8f6a156b7d34cdf"
     )
 
     suspend fun browseAll() = api.graphQuery<BrowseAll>(
@@ -69,8 +78,7 @@ class Queries(
         "0e6f9020a66fe15b93b3bb5c7e6484d1d8cb3775963996eaede72bac4d97e909",
         buildJsonObject {
             applySearchVariables(query, offset)
-        }
-
+        },
     )
 
     suspend fun searchAlbum(query: String, offset: Int) = api.graphQuery<SearchDesktop>(
@@ -121,6 +129,46 @@ class Queries(
         }
     )
 
+    suspend fun fetchPlaylist(uri: String) = api.graphQuery<FetchPlaylist>(
+        "fetchPlaylistWithGatedEntityRelations",
+        "19ff1327c29e99c208c86d7a9d8f1929cfdf3d3202a0ff4253c821f1901aa94d",
+        buildJsonObject {
+            put("uri", uri)
+            put("offset", 9999)
+        }
+    )
+
+    suspend fun fetchPlaylistContent(uri: String, offset: Int) = api.graphQuery<FetchPlaylist>(
+        "fetchPlaylistContentsWithGatedEntityRelations",
+        "19ff1327c29e99c208c86d7a9d8f1929cfdf3d3202a0ff4253c821f1901aa94d",
+        buildJsonObject {
+            put("uri", uri)
+            put("offset", offset)
+            put("limit", 25)
+        }
+    )
+
+    suspend fun getAlbum(uri: String) = api.graphQuery<GetAlbum>(
+        "getAlbum",
+        "8f4cd5650f9d80349dbe68684057476d8bf27a5c51687b2b1686099ab5631589",
+        buildJsonObject {
+            put("uri", uri)
+            put("locale", "")
+            put("offset", 0)
+            put("limit", 50)
+        }
+    )
+
+    suspend fun queryAlbumTracks(uri: String, offset: Int) = api.graphQuery<GetAlbum>(
+        "queryAlbumTracks",
+        "8f4cd5650f9d80349dbe68684057476d8bf27a5c51687b2b1686099ab5631589",
+        buildJsonObject {
+            put("uri", uri)
+            put("offset", offset)
+            put("limit", 50)
+        }
+    )
+
     suspend fun areEntitiesInLibrary(vararg uris: String) = api.graphQuery<AreEntitiesInLibrary>(
         "areEntitiesInLibrary",
         "6ec3f767111e1f88a68058560f961161679d2cd4805ff3b8cb4b25c83ccbd6e0",
@@ -147,19 +195,20 @@ class Queries(
 //        }
 //    )
 
-    suspend fun metadata4Track(id: String) = api.queryRaw(
+    suspend fun metadata4Track(id: String) = api.call(
         Request.Builder()
             .url("https://spclient.wg.spotify.com/metadata/4/track/$id").build()
     ).let { api.json.decode<Metadata4Track>(it) }
 
-    suspend fun storageResolve(id: String) = api.queryRaw(
+    suspend fun storageResolve(id: String) = api.call(
         Request.Builder()
             .url("https://spclient.wg.spotify.com/storage-resolve/v2/files/audio/interactive/10/$id?version=10000000&product=9&platform=39&alt=json")
             .build()
     ).let { api.json.decode<StorageResolve>(it) }
 
-//    suspend fun colorLyrics(id:String) = api.queryRaw(
-//        Request.Builder()
-//            .url("https://spclient.wg.spotify.com/color-lyrics/v2/track/$id").build()
-//    )
+    suspend fun colorLyrics(id:String, img:String) = api.call(
+        Request.Builder()
+            .url("https://spclient.wg.spotify.com/color-lyrics/v2/track/$id/image/${api.urlEncode(img)}?format=json&vocalRemoval=false&market=from_token")
+            .build()
+    ).let { api.json.decode<ColorLyrics>(it) }
 }

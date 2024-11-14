@@ -47,17 +47,22 @@ data class Profile(
     val verified: Boolean? = null
 )
 
+interface ITrack {
+    val artists: Artists?
+    val contentRating: ContentRating?
+    val duration: Duration?
+    val name: String?
+    val playability: Playability?
+    val playcount: String?
+    val uri: String?
+}
+
 @Serializable
 data class AlbumOfTrack(
-    val copyright: Copyright? = null,
     val courtesyLine: String? = null,
     val id: String? = null,
     val date: Date? = null,
     val name: String? = null,
-    val playability: AlbumOfTrackPlayability? = null,
-    val sharingInfo: SharingInfo? = null,
-    val tracks: Tracks? = null,
-    val type: Type? = null,
     val uri: String? = null,
     val coverArt: Artwork? = null
 )
@@ -145,12 +150,6 @@ data class PlayedState(
 )
 
 @Serializable
-data class ReleaseDate(
-    val isoString: String? = null,
-    val precision: String? = null
-)
-
-@Serializable
 data class Restrictions(
     val paywallContent: Boolean? = null
 )
@@ -176,5 +175,37 @@ data class Visuals(
 
 @Serializable
 data class PagingInfo(
-    val nextOffset: Long? = null
+    val nextOffset: Long? = null,
+    val limit: Long? = null,
+    val offset: Long? = null,
 )
+
+@Serializable
+data class Copyright(
+    val items: List<CopyrightItem>? = null,
+    val totalCount: Long? = null
+)
+
+@Serializable
+data class CopyrightItem(
+    val text: String? = null,
+    val type: String? = null
+)
+
+@Serializable
+data class Discs(
+    val items: List<Item>? = null,
+    val totalCount: Long? = null
+) {
+
+    @Serializable
+    data class Item(
+        val number: Long? = null,
+        val tracks: Tracks? = null
+    )
+
+    @Serializable
+    data class Tracks(
+        val totalCount: Long? = null
+    )
+}

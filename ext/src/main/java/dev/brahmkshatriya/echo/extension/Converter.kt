@@ -20,6 +20,7 @@ import dev.brahmkshatriya.echo.extension.spotify.Cache
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.models.Artwork
 import dev.brahmkshatriya.echo.extension.spotify.models.Canvas
+import dev.brahmkshatriya.echo.extension.spotify.models.ITrack
 import dev.brahmkshatriya.echo.extension.spotify.models.Item
 import dev.brahmkshatriya.echo.extension.spotify.models.Item.Wrapper
 import dev.brahmkshatriya.echo.extension.spotify.models.Label
@@ -82,23 +83,69 @@ private fun SectionItem.toCategory(api: Queries): Shelf.Category? {
     return item.toCategory(api)
 }
 
+fun ITrack.toTrack(album: Album?): Track? {
+    return Track(
+        id = uri ?: return null,
+        title = name ?: return null,
+        cover = album?.cover,
+        artists = artists?.items?.mapNotNull {
+            val id = it.uri ?: return@mapNotNull null
+            val name = it.profile?.name ?: return@mapNotNull null
+            Artist(id, name, it.profile.avatar?.toImageHolder())
+        } ?: listOf(),
+        album = album,
+        isExplicit = contentRating?.label == Label.EXPLICIT,
+        duration = duration?.totalMilliseconds,
+        plays = playcount?.toInt()
+    )
+}
+
+fun Item.Track.toTrack() = toTrack(
+    albumOfTrack?.let {
+        Album(
+            id = it.uri ?: return@let null,
+            title = it.name ?: return@let null,
+            cover = it.coverArt?.toImageHolder()
+        )
+    }
+)
+
+fun Item.Playlist.toPlaylist(): Playlist? {
+    return Playlist(
+        id = uri ?: return null,
+        title = name ?: return null,
+        isEditable = false,
+        subtitle = description ?: "",
+        cover = images?.items?.firstOrNull()?.toImageHolder(),
+        authors = listOfNotNull(
+            (ownerV2?.data?.toMediaItem() as? EchoMediaItem.Profile.UserItem)?.user
+        ),
+        tracks = content?.totalCount
+    )
+}
+
+fun Item.Album.toAlbum(): Album? {
+    return Album(
+        id = uri ?: return null,
+        title = name ?: return null,
+        subtitle = date?.year?.toString(),
+        artists = artists?.items?.mapNotNull {
+            val id = it.uri ?: return@mapNotNull null
+            val name = it.profile?.name ?: return@mapNotNull null
+            Artist(id, name, it.profile.avatar?.toImageHolder())
+        } ?: listOf(),
+        cover = coverArt?.toImageHolder(),
+        tracks = tracksV2?.totalCount
+    )
+}
+
 private fun Wrapper.toMediaItem(): EchoMediaItem? {
     return data.toMediaItem()
 }
 
 private fun Item.toMediaItem(): EchoMediaItem? {
     return when (this) {
-        is Item.Album -> Album(
-            id = uri ?: return null,
-            title = name ?: return null,
-            subtitle = date?.year?.toString(),
-            artists = artists?.items?.mapNotNull {
-                val id = it.uri ?: return@mapNotNull null
-                val name = it.profile?.name ?: return@mapNotNull null
-                Artist(id, name, it.profile.avatar?.toImageHolder())
-            } ?: listOf(),
-            cover = coverArt?.toImageHolder()
-        ).toMediaItem()
+        is Item.Album -> toAlbum()?.toMediaItem()
 
         is Item.PreRelease -> Album(
             id = preReleaseContent?.uri ?: return null,
@@ -112,49 +159,16 @@ private fun Item.toMediaItem(): EchoMediaItem? {
             cover = preReleaseContent.coverArt?.toImageHolder()
         ).toMediaItem()
 
-
-        is Item.Playlist -> Playlist(
-            id = uri ?: return null,
-            title = name ?: return null,
-            isEditable = false,
-            subtitle = description.removeHtml(),
-            cover = images?.items?.firstOrNull()?.toImageHolder(),
-            authors = listOfNotNull(
-                (ownerV2?.data?.toMediaItem() as? EchoMediaItem.Profile.UserItem)?.user
-            )
-        ).toMediaItem()
+        is Item.Playlist -> toPlaylist()?.toMediaItem()
 
         is Item.Artist -> Artist(
             id = uri ?: return null,
             name = profile?.name ?: return null,
-            cover = profile.avatar?.toImageHolder(),
-            subtitle = profile.verified?.let { if (it) "Verified" else null }
+            cover = visuals?.avatarImage?.toImageHolder(),
+//            subtitle = profile.verified?.let { if (it) "Verified" else null }
         ).toMediaItem()
 
-        is Item.Track -> {
-            val album = albumOfTrack?.let {
-                Album(
-                    id = it.uri ?: return@let null,
-                    title = it.name ?: return@let null,
-                    cover = it.coverArt?.toImageHolder()
-                )
-            }
-            Track(
-                id = uri ?: return null,
-                title = name ?: return null,
-                cover = album?.cover,
-                artists = artists?.items?.mapNotNull {
-                    val id = it.uri ?: return@mapNotNull null
-                    val name = it.profile?.name ?: return@mapNotNull null
-                    Artist(id, name, it.profile.avatar?.toImageHolder())
-                } ?: listOf(),
-                album = album,
-                isExplicit = contentRating?.label == Label.EXPLICIT,
-                duration = duration?.totalMilliseconds,
-                plays = playcount?.toInt()
-            ).toMediaItem()
-        }
-
+        is Item.Track -> toTrack()?.toMediaItem()
 
         is Item.Episode -> Track(
             id = uri ?: return null,
@@ -286,7 +300,7 @@ fun SearchDesktop.TracksV2?.toItemShelves(): Pair<List<Shelf>, Long?> {
     val items = items
     val next = pagingInfo?.nextOffset
     return items.mapNotNull { item ->
-        item.item?.toMediaItem()?.toShelf()
+        item.item?.data?.toTrack()?.toMediaItem()?.toShelf()
     } to next
 }
 
@@ -323,11 +337,11 @@ private fun List<Wrapper>?.toMediaShelf(title: String): Shelf? {
     )
 }
 
-private fun List<SearchDesktop.ItemWrapperWrapper>?.toTrackShelf(title: String): Shelf? {
+private fun List<SearchDesktop.TrackWrapperWrapper>?.toTrackShelf(title: String): Shelf? {
     if (this.isNullOrEmpty()) return null
     return Shelf.Lists.Tracks(
         title = title,
-        list = mapNotNull { (it.item?.toMediaItem() as? EchoMediaItem.TrackItem)?.track }
+        list = mapNotNull { it.item?.data?.toTrack() }
     )
 }
 

@@ -11,7 +11,7 @@ class Authentication(
     private suspend fun createAccessToken(): String {
         val token = api.cache.accessToken
         val tokenExp = api.cache.accessTokenExpiration ?: 0
-        if (accessToken == null && token != null && tokenExp > System.currentTimeMillis()) {
+        if (accessToken == null && token != null && System.currentTimeMillis() < tokenExp) {
             accessToken = token
             expiresIn = tokenExp
             return token
@@ -20,8 +20,12 @@ class Authentication(
             .url("https://open.spotify.com/get_access_token?reason=transport&productType=web-player")
         if (api.token != null) req.header("Cookie", "sp_dc=${api.token}")
         val response = with(api) {
-            json.decode<TokenResponse>(callGetBody(req.build()))
+            val response = callGetBody(req.build())
+            runCatching { json.decode<TokenResponse>(response) }.getOrElse {
+                throw json.decode<ErrorMessage>(response).error
+            }
         }
+        println("Auth: $response")
         expiresIn = response.accessTokenExpirationTimestampMs
         accessToken = response.accessToken
         api.cache.accessToken = accessToken
@@ -42,9 +46,20 @@ class Authentication(
 
     @Serializable
     data class TokenResponse(
+        val isAnonymous: Boolean,
+        val accessTokenExpirationTimestampMs: Long,
         val clientId: String,
         val accessToken: String,
-        val accessTokenExpirationTimestampMs: Long,
-        val isAnonymous: Boolean
     )
+
+    @Serializable
+    data class ErrorMessage(
+        val error: Error
+    )
+
+    @Serializable
+    data class Error(
+        val code: Int,
+        override val message: String
+    ) : Exception(message)
 }

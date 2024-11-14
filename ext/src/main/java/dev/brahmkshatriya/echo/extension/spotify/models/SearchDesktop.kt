@@ -28,7 +28,7 @@ data class SearchDesktop(
 
     @Serializable
     data class TracksV2(
-        val items: List<ItemWrapperWrapper>? = null,
+        val items: List<TrackWrapperWrapper>? = null,
         val pagingInfo: PagingInfo? = null,
         val totalCount: Long? = null
     )
@@ -59,5 +59,10 @@ data class SearchDesktop(
     @Serializable
     data class ItemWrapperWrapper(
         val item: Item.Wrapper? = null
+    )
+
+    @Serializable
+    data class TrackWrapperWrapper(
+        val item: Item.TrackWrapper? = null
     )
 }
