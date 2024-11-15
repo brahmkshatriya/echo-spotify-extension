@@ -9,12 +9,6 @@ data class BrowseAll (
 
     @Serializable
     data class Data(
-        val browseStart: BrowseStart
-    )
-
-    @Serializable
-    data class BrowseStart(
-        val sections: Sections,
-        val uri: String
+        val browseStart: Sections.Container
     )
 }

@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.extension
 
 import dev.brahmkshatriya.echo.common.clients.AlbumClient
 import dev.brahmkshatriya.echo.common.clients.ExtensionClient
+import dev.brahmkshatriya.echo.common.clients.HomeFeedClient
 import dev.brahmkshatriya.echo.common.clients.LoginClient
 import dev.brahmkshatriya.echo.common.clients.LyricsClient
 import dev.brahmkshatriya.echo.common.clients.PlaylistClient
@@ -36,7 +37,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.net.HttpCookie
 
-class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClient,
+class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
+    SearchClient, HomeFeedClient,
     TrackClient, TrackLikeClient, TrackHideClient, LyricsClient,
     AlbumClient, SaveToLibraryClient, PlaylistClient {
 
@@ -218,9 +220,6 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClie
         TODO("Not yet implemented")
     }
 
-    override fun getShelves(playlist: Playlist): PagedData<Shelf> = PagedData.Single {
-        TODO("Not yet implemented")
-    }
 
     override suspend fun loadPlaylist(playlist: Playlist): Playlist {
         return queries.fetchPlaylist(playlist.id).data.playlistV2.toPlaylist()!!
@@ -234,7 +233,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClie
         tracks to if (content.totalCount!! > next) next else null
     }
 
-    override fun getShelves(album: Album): PagedData<Shelf> = PagedData.Single {
+    override fun getShelves(playlist: Playlist): PagedData<Shelf> = PagedData.Single {
         TODO("Not yet implemented")
     }
 
@@ -253,5 +252,20 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie, SearchClie
             tracks to if (content.totalCount!! > next) next else null
         }
     }
-}
 
+    override fun getShelves(album: Album): PagedData<Shelf> = PagedData.Single {
+        TODO("Not yet implemented")
+    }
+
+    override suspend fun getHomeTabs(): List<Tab> {
+        if(api.token == null) return emptyList()
+        val all = listOf(Tab("", "All"))
+        return all + queries.homeFeedChips().data?.home?.homeChips?.toTabs()!!
+    }
+
+    override fun getHomeFeed(tab: Tab?) = PagedData.Single {
+        queries.homeSubfeed(tab?.id).data?.home
+            ?.sectionContainer?.sections?.toShelves(queries)!!
+    }
+
+}

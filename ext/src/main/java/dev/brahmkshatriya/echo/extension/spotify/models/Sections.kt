@@ -10,6 +10,11 @@ data class Sections(
     val totalCount: Long? = null
 ) {
 
+    @Serializable
+    data class Container(
+        val sections: Sections,
+        val uri: String? = null
+    )
 
     @Serializable
     data class SectionItem(
@@ -27,15 +32,19 @@ data class Sections(
         @SerialName("__typename")
         val typename: Typename? = null,
 
-        val subtitle: String? = null,
+        val subtitle: Title? = null,
         val title: Title? = null
     )
 
     @Serializable
     enum class Typename {
-        @SerialName("BrowseGenericSectionData") BrowseGenericSectionData,
-        @SerialName("BrowseGridSectionData") BrowseGridSectionData,
-        @SerialName("BrowseRelatedSectionData") BrowseRelatedSectionData;
+        HomeShortsSectionData,
+        HomeGenericSectionData,
+        HomeFeedBaselineSectionData,
+        HomeRecentlyPlayedSectionData,
+        BrowseGenericSectionData,
+        BrowseGridSectionData,
+        BrowseRelatedSectionData;
     }
 
     @Serializable

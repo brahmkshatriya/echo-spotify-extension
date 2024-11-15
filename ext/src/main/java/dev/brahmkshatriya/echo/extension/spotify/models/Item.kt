@@ -228,6 +228,14 @@ sealed class Item {
         val message: String? = null,
     ) : Item()
 
+    @Suppress("unused")
+    @Serializable
+    @SerialName("RestrictedContent")
+    data class RestrictedContent(
+        @SerialName("__typename")
+        override val typename: String,
+    ) : Item()
+
     @Serializable
     data class Wrapper(
         @SerialName("__typename")

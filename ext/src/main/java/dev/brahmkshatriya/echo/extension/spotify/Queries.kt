@@ -10,6 +10,7 @@ import dev.brahmkshatriya.echo.extension.spotify.models.Canvas
 import dev.brahmkshatriya.echo.extension.spotify.models.ColorLyrics
 import dev.brahmkshatriya.echo.extension.spotify.models.FetchPlaylist
 import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
+import dev.brahmkshatriya.echo.extension.spotify.models.HomeFeed
 import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track
 import dev.brahmkshatriya.echo.extension.spotify.models.ProfileAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.SearchDesktop
@@ -20,6 +21,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import okhttp3.Request
+import java.util.TimeZone
 
 class Queries(
     val api: SpotifyApi,
@@ -206,9 +208,38 @@ class Queries(
             .build()
     ).let { api.json.decode<StorageResolve>(it) }
 
-    suspend fun colorLyrics(id:String, img:String) = api.call(
+    suspend fun colorLyrics(id: String, img: String) = api.call(
         Request.Builder()
-            .url("https://spclient.wg.spotify.com/color-lyrics/v2/track/$id/image/${api.urlEncode(img)}?format=json&vocalRemoval=false&market=from_token")
+            .url(
+                "https://spclient.wg.spotify.com/color-lyrics/v2/track/$id/image/${
+                    api.urlEncode(
+                        img
+                    )
+                }?format=json&vocalRemoval=false&market=from_token"
+            )
             .build()
     ).let { api.json.decode<ColorLyrics>(it) }
+
+
+    suspend fun homeFeedChips(token: String? = null) = api.graphQuery<HomeFeed>(
+        "homeFeedChips",
+        "26794052084a1d604a9644ab869b9e467afbd4e29a38edaaed9073e70834df81",
+        buildJsonObject {
+            put("timeZone", TimeZone.getDefault().id!!)
+            put("sp_t", token ?: "")
+        },
+        true
+    )
+
+    suspend fun homeSubfeed(facet: String?, token: String? = null) = api.graphQuery<HomeFeed>(
+        "homeSubfeed",
+        "26794052084a1d604a9644ab869b9e467afbd4e29a38edaaed9073e70834df81",
+        buildJsonObject {
+            put("timeZone", TimeZone.getDefault().id!!)
+            put("sp_t", token ?: "")
+            put("facet", facet ?: "")
+            put("sectionItemsLimit", 10)
+        },
+        true
+    )
 }

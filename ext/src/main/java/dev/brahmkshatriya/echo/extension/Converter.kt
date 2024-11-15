@@ -20,6 +20,7 @@ import dev.brahmkshatriya.echo.extension.spotify.Cache
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.models.Artwork
 import dev.brahmkshatriya.echo.extension.spotify.models.Canvas
+import dev.brahmkshatriya.echo.extension.spotify.models.HomeFeed
 import dev.brahmkshatriya.echo.extension.spotify.models.ITrack
 import dev.brahmkshatriya.echo.extension.spotify.models.Item
 import dev.brahmkshatriya.echo.extension.spotify.models.Item.Wrapper
@@ -52,28 +53,46 @@ fun Settings.toCache(): Cache {
     }
 }
 
+
+fun List<HomeFeed.Chip>.toTabs() = map {
+    Tab(it.id!!, it.label?.transformedLabel!!)
+}
+
 fun Sections.toShelves(queries: Queries): List<Shelf> {
     return items?.mapNotNull { item ->
         if (item.data!!.typename == Sections.Typename.BrowseRelatedSectionData)
             return@mapNotNull item.toCategory(queries)
 
-        val title = item.data.title?.transformedLabel!!
+        val title = item.data.title?.transformedLabel ?: ""
+        val subtitle = item.data.subtitle?.transformedLabel
         when (item.data.typename) {
-            Sections.Typename.BrowseGenericSectionData -> Shelf.Lists.Items(
-                title = title,
-                list = item.sectionItems?.items?.mapNotNull { it.content.data.toMediaItem() }!!,
-            )
+            null -> null
+            Sections.Typename.BrowseGenericSectionData, Sections.Typename.HomeGenericSectionData, Sections.Typename.HomeRecentlyPlayedSectionData ->
+                Shelf.Lists.Items(
+                    title = title,
+                    subtitle = subtitle,
+                    list = item.sectionItems?.items?.mapNotNull { it.content.data.toMediaItem() }!!,
+                )
 
             Sections.Typename.BrowseGridSectionData -> {
                 Shelf.Lists.Categories(
                     title = title,
+                    subtitle = subtitle,
                     list = item.sectionItems?.items?.mapNotNull { it.toCategory(queries) }!!,
                     type = Shelf.Lists.Type.Grid
                 )
             }
 
             Sections.Typename.BrowseRelatedSectionData -> throw IllegalStateException()
-            null -> null
+            Sections.Typename.HomeShortsSectionData -> Shelf.Lists.Items(
+                title = title,
+                subtitle = subtitle,
+                list = item.sectionItems?.items?.mapNotNull { it.content.data.toMediaItem() }!!,
+                type = Shelf.Lists.Type.Grid
+            )
+
+            Sections.Typename.HomeFeedBaselineSectionData -> item.sectionItems?.items
+                ?.firstOrNull()?.content?.data?.toMediaItem()?.toShelf()
         }
     }!!
 }
@@ -165,6 +184,7 @@ private fun Item.toMediaItem(): EchoMediaItem? {
             id = uri ?: return null,
             name = profile?.name ?: return null,
             cover = visuals?.avatarImage?.toImageHolder(),
+            subtitle = "Artist",
 //            subtitle = profile.verified?.let { if (it) "Verified" else null }
         ).toMediaItem()
 
@@ -186,12 +206,14 @@ private fun Item.toMediaItem(): EchoMediaItem? {
         is Item.Podcast -> Artist(
             id = uri ?: return null,
             name = name ?: return null,
+            subtitle = "Podcast",
             cover = coverArt?.toImageHolder(),
         ).toMediaItem()
 
         is Item.User -> User(
             id = uri ?: return null,
             name = displayName ?: name ?: username ?: return null,
+            subtitle = "User",
             cover = avatar?.toImageHolder()
         ).toMediaItem()
 
@@ -200,6 +222,7 @@ private fun Item.toMediaItem(): EchoMediaItem? {
         is Item.BrowseSectionContainer -> null
         is Item.Genre -> null
         is Item.NotFound -> null
+        is Item.RestrictedContent -> null
     }
 }
 

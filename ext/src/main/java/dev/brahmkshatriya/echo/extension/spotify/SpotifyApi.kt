@@ -43,6 +43,7 @@ class SpotifyApi(
         variables: JsonObject = buildJsonObject { },
         print: Boolean = false
     ): T {
+        println(variables.toString())
         val builder = StringBuilder("https://api-partner.spotify.com/pathfinder/v1/query")
             .append("?operationName=${operationName}")
             .append("&variables=${urlEncode(variables)}")

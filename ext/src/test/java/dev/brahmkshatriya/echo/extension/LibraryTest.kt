@@ -142,4 +142,14 @@ class LibraryTest {
         val tracks = extension.loadTracks(album).loadAll()
         println("Tracks: ${tracks.size}")
     }
+
+    @Test
+    fun testHomeFeed() = testIn("Home Feed Test") {
+        val tabs = extension.getHomeTabs()
+        println(tabs)
+        extension.getHomeFeed(null).loadAll().forEach { it.print() }
+        tabs.forEach { tab ->
+            extension.getHomeFeed(tab).loadAll().forEach { it.print() }
+        }
+    }
 }
