@@ -58,12 +58,15 @@ fun List<HomeFeed.Chip>.toTabs() = map {
     Tab(it.id!!, it.label?.transformedLabel!!)
 }
 
-fun Sections.toShelves(queries: Queries): List<Shelf> {
+fun Sections.toShelves(
+    queries: Queries,
+    emptyTitle: String? = null
+): List<Shelf> {
     return items?.mapNotNull { item ->
         if (item.data!!.typename == Sections.Typename.BrowseRelatedSectionData)
             return@mapNotNull item.toCategory(queries)
 
-        val title = item.data.title?.transformedLabel ?: ""
+        val title = item.data.title?.transformedLabel ?: emptyTitle ?: ""
         val subtitle = item.data.subtitle?.transformedLabel
         when (item.data.typename) {
             null -> null
@@ -71,7 +74,7 @@ fun Sections.toShelves(queries: Queries): List<Shelf> {
                 Shelf.Lists.Items(
                     title = title,
                     subtitle = subtitle,
-                    list = item.sectionItems?.items?.mapNotNull { it.content.data.toMediaItem() }!!,
+                    list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem() }!!,
                 )
 
             Sections.Typename.BrowseGridSectionData -> {
@@ -87,7 +90,7 @@ fun Sections.toShelves(queries: Queries): List<Shelf> {
             Sections.Typename.HomeShortsSectionData -> Shelf.Lists.Items(
                 title = title,
                 subtitle = subtitle,
-                list = item.sectionItems?.items?.mapNotNull { it.content.data.toMediaItem() }!!,
+                list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem() }!!,
                 type = Shelf.Lists.Type.Grid
             )
 
@@ -115,7 +118,7 @@ fun ITrack.toTrack(album: Album?): Track? {
         album = album,
         isExplicit = contentRating?.label == Label.EXPLICIT,
         duration = duration?.totalMilliseconds,
-        plays = playcount?.toInt()
+        plays = playcount?.toLong()
     )
 }
 
@@ -134,7 +137,7 @@ fun Item.Playlist.toPlaylist(): Playlist? {
         id = uri ?: return null,
         title = name ?: return null,
         isEditable = false,
-        subtitle = description ?: "",
+        subtitle = description?.removeHtml() ?: "",
         cover = images?.items?.firstOrNull()?.toImageHolder(),
         authors = listOfNotNull(
             (ownerV2?.data?.toMediaItem() as? EchoMediaItem.Profile.UserItem)?.user
@@ -158,10 +161,7 @@ fun Item.Album.toAlbum(): Album? {
     )
 }
 
-private fun Wrapper.toMediaItem(): EchoMediaItem? {
-    return data.toMediaItem()
-}
-
+private fun Wrapper.toMediaItem() = data?.toMediaItem()
 private fun Item.toMediaItem(): EchoMediaItem? {
     return when (this) {
         is Item.Album -> toAlbum()?.toMediaItem()
@@ -194,7 +194,7 @@ private fun Item.toMediaItem(): EchoMediaItem? {
             id = uri ?: return null,
             title = name ?: return null,
             cover = coverArt?.toImageHolder(),
-            description = description,
+            description = description?.removeHtml(),
             artists = listOfNotNull(
                 (podcastV2?.toMediaItem() as? EchoMediaItem.Profile.ArtistItem)?.artist
             ),
@@ -314,7 +314,7 @@ fun SearchDesktop.SearchItems?.toItemShelves(): Pair<List<Shelf>, Long?> {
     val items = items
     val next = pagingInfo?.nextOffset
     return items.mapNotNull { item ->
-        item.data.toMediaItem()?.toShelf()
+        item.data?.toMediaItem()?.toShelf()
     } to next
 }
 

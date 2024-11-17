@@ -209,17 +209,12 @@ class Queries(
     ).let { api.json.decode<StorageResolve>(it) }
 
     suspend fun colorLyrics(id: String, img: String) = api.call(
-        Request.Builder()
-            .url(
-                "https://spclient.wg.spotify.com/color-lyrics/v2/track/$id/image/${
-                    api.urlEncode(
-                        img
-                    )
-                }?format=json&vocalRemoval=false&market=from_token"
-            )
-            .build()
+        Request.Builder().url(
+            "https://spclient.wg.spotify.com/color-lyrics/v2/track/$id/image/${
+                api.urlEncode(img)
+            }?format=json&vocalRemoval=false&market=from_token"
+        ).build()
     ).let { api.json.decode<ColorLyrics>(it) }
-
 
     suspend fun homeFeedChips(token: String? = null) = api.graphQuery<HomeFeed>(
         "homeFeedChips",
@@ -227,8 +222,18 @@ class Queries(
         buildJsonObject {
             put("timeZone", TimeZone.getDefault().id!!)
             put("sp_t", token ?: "")
-        },
-        true
+        }
+    )
+
+    suspend fun home(facet: String?, token: String? = null) = api.graphQuery<HomeFeed>(
+        "home",
+        "26794052084a1d604a9644ab869b9e467afbd4e29a38edaaed9073e70834df81",
+        buildJsonObject {
+            put("timeZone", TimeZone.getDefault().id!!)
+            put("sp_t", token ?: "")
+            put("facet", facet ?: "")
+            put("sectionItemsLimit", 10)
+        }
     )
 
     suspend fun homeSubfeed(facet: String?, token: String? = null) = api.graphQuery<HomeFeed>(
@@ -239,7 +244,6 @@ class Queries(
             put("sp_t", token ?: "")
             put("facet", facet ?: "")
             put("sectionItemsLimit", 10)
-        },
-        true
+        }
     )
 }

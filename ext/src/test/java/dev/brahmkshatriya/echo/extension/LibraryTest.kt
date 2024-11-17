@@ -94,8 +94,10 @@ class LibraryTest {
 
     @Test
     fun getTrack() = testIn("Get Track") {
-        val track = extension.loadTrack(Track("spotify:track:4NSu2c1qZgHhU67MNkd5Hd", ""))
+        val track = extension.loadTrack(Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", ""))
         println(track)
+        val lyrics = extension.searchTrackLyrics("", track).loadAll()
+        println(lyrics)
         track.sources.forEach { streamable ->
             println(streamable)
             val media = extension.getStreamableMedia(streamable)

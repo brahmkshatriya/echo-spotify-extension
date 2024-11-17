@@ -188,14 +188,32 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     }
 
     override fun searchTrackLyrics(clientId: String, track: Track) = PagedData.Single {
-        val id = Base62.decode(track.id.substringAfter("spotify:track:"))
+        val id = track.id.substringAfter("spotify:track:")
         val image = track.cover as ImageHolder.UrlRequestImageHolder
-        val lyrics = queries.colorLyrics(id, image.request.url)
-        println(lyrics)
-        listOf<Lyrics>()
+        val lyrics = runCatching { queries.colorLyrics(id, image.request.url).lyrics }
+            .getOrNull() ?: return@Single emptyList<Lyrics>()
+        var last = Long.MAX_VALUE
+        val list = lyrics.lines?.reversed()?.mapNotNull {
+            val start = it.startTimeMs?.toLong()!!
+            val item = Lyrics.Item(
+                it.words ?: return@mapNotNull null,
+                startTime = start,
+                endTime = last,
+            )
+            last = start
+            item
+        }?.reversed() ?: return@Single emptyList<Lyrics>()
+        listOf(
+            Lyrics(
+                id = track.id,
+                title = track.title,
+                subtitle = lyrics.providerDisplayName,
+                lyrics = Lyrics.Timed(list)
+            )
+        )
     }
 
-    override suspend fun loadLyrics(small: Lyrics) = small
+    override suspend fun loadLyrics(lyrics: Lyrics) = lyrics
 
     override suspend fun isSavedToLibrary(mediaItem: EchoMediaItem): Boolean {
         if (api.token == null) return false
@@ -258,14 +276,20 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     }
 
     override suspend fun getHomeTabs(): List<Tab> {
-        if(api.token == null) return emptyList()
+        if (api.token == null) return emptyList()
         val all = listOf(Tab("", "All"))
         return all + queries.homeFeedChips().data?.home?.homeChips?.toTabs()!!
     }
 
     override fun getHomeFeed(tab: Tab?) = PagedData.Single {
-        queries.homeSubfeed(tab?.id).data?.home
-            ?.sectionContainer?.sections?.toShelves(queries)!!
+        val home = if (tab == null || tab.id == "") queries.home(null).data?.home!!
+        else queries.homeSubfeed(tab.id).data?.home!!
+        home.run {
+            sectionContainer?.sections?.toShelves(
+                queries,
+                greeting?.transformedLabel ?: "What's on your mind?"
+            )!!
+        }
     }
 
 }

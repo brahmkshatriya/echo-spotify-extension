@@ -240,7 +240,7 @@ sealed class Item {
     data class Wrapper(
         @SerialName("__typename")
         val typename: String,
-        val data: Item
+        val data: Item? = null,
     )
 
     @Serializable

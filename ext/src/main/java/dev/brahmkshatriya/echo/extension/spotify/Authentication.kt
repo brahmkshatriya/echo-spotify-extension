@@ -25,7 +25,6 @@ class Authentication(
                 throw json.decode<ErrorMessage>(response).error
             }
         }
-        println("Auth: $response")
         expiresIn = response.accessTokenExpirationTimestampMs
         accessToken = response.accessToken
         api.cache.accessToken = accessToken

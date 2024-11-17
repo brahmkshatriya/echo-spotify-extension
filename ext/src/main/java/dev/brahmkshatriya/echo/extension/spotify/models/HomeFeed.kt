@@ -20,7 +20,8 @@ data class HomeFeed(
         @SerialName("__typename")
         val typename: String? = null,
         val homeChips: List<Chip>? = null,
-        val sectionContainer: Sections.Container? = null
+        val sectionContainer: Sections.Container? = null,
+        val greeting: Title? = null
     )
 
     @Serializable
