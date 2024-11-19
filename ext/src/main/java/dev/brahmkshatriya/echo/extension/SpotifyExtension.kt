@@ -6,19 +6,23 @@ import dev.brahmkshatriya.echo.common.clients.HomeFeedClient
 import dev.brahmkshatriya.echo.common.clients.LoginClient
 import dev.brahmkshatriya.echo.common.clients.LyricsClient
 import dev.brahmkshatriya.echo.common.clients.PlaylistClient
+import dev.brahmkshatriya.echo.common.clients.RadioClient
 import dev.brahmkshatriya.echo.common.clients.SaveToLibraryClient
 import dev.brahmkshatriya.echo.common.clients.SearchClient
+import dev.brahmkshatriya.echo.common.clients.ShareClient
 import dev.brahmkshatriya.echo.common.clients.TrackClient
 import dev.brahmkshatriya.echo.common.clients.TrackHideClient
 import dev.brahmkshatriya.echo.common.clients.TrackLikeClient
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Album
+import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.ImageHolder
 import dev.brahmkshatriya.echo.common.models.Lyrics
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.QuickSearch
+import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Request.Companion.toRequest
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Streamable
@@ -38,8 +42,8 @@ import kotlinx.coroutines.coroutineScope
 import java.net.HttpCookie
 
 class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
-    SearchClient, HomeFeedClient,
-    TrackClient, TrackLikeClient, TrackHideClient, LyricsClient,
+    SearchClient, HomeFeedClient, ShareClient,
+    TrackClient, TrackLikeClient, TrackHideClient, LyricsClient, RadioClient,
     AlbumClient, SaveToLibraryClient, PlaylistClient {
 
     override suspend fun onExtensionSelected() {}
@@ -155,9 +159,9 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     override suspend fun getStreamableMedia(streamable: Streamable): Streamable.Media {
         return when (streamable.type) {
             Streamable.MediaType.Source -> {
-                val url = queries.storageResolve(streamable.id).cdnUrl.first()
                 api.token ?: throw ClientException.LoginRequired()
                 val accessToken = api.auth.getToken()
+                val url = queries.storageResolve(streamable.id).cdnUrl.first()
                 val time = "time=${System.currentTimeMillis()}"
                 val decryption = Streamable.Decryption.Widevine(
                     "https://spclient.wg.spotify.com/widevine-license/v1/audio/license?$time"
@@ -186,6 +190,17 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
             canvas.await()
         )
     }
+
+    private suspend fun createRadio(id:String) : Radio {
+        val radioId = queries.seedToPlaylist(id).mediaItems.first().uri
+        return queries.fetchPlaylist(radioId).data.playlistV2.toRadio()!!
+    }
+    override fun loadTracks(radio: Radio) = loadPlaylistTracks(radio.id)
+    override suspend fun radio(track: Track, context: EchoMediaItem?) = createRadio(track.id)
+    override suspend fun radio(album: Album) = createRadio(album.id)
+    override suspend fun radio(artist: Artist) = createRadio(artist.id)
+    override suspend fun radio(user: User) = createRadio(user.id)
+    override suspend fun radio(playlist: Playlist) = createRadio(playlist.id)
 
     override fun searchTrackLyrics(clientId: String, track: Track) = PagedData.Single {
         val id = track.id.substringAfter("spotify:track:")
@@ -243,13 +258,15 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         return queries.fetchPlaylist(playlist.id).data.playlistV2.toPlaylist()!!
     }
 
-    override fun loadTracks(playlist: Playlist) = paged { offset ->
-        val content = queries.fetchPlaylistContent(playlist.id, offset).data.playlistV2.content!!
+    private fun loadPlaylistTracks(id: String) = paged { offset ->
+        val content = queries.fetchPlaylistContent(id, offset).data.playlistV2.content!!
         val tracks = content.items!!.map { it.itemV2?.data?.toTrack()!! }
         val page = content.pagingInfo!!
         val next = page.offset!! + page.limit!!
         tracks to if (content.totalCount!! > next) next else null
     }
+
+    override fun loadTracks(playlist: Playlist) = loadPlaylistTracks(playlist.id)
 
     override fun getShelves(playlist: Playlist): PagedData<Shelf> = PagedData.Single {
         TODO("Not yet implemented")
@@ -290,6 +307,12 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
                 greeting?.transformedLabel ?: "What's on your mind?"
             )!!
         }
+    }
+
+    override suspend fun onShare(item: EchoMediaItem): String {
+        val type = item.id.substringAfter("spotify:").substringBefore(":")
+        val id = item.id.substringAfter("spotify:$type:")
+        return "https://open.spotify.com/$type/$id"
     }
 
 }

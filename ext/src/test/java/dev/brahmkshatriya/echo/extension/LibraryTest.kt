@@ -154,4 +154,14 @@ class LibraryTest {
             extension.getHomeFeed(tab).loadAll().forEach { it.print() }
         }
     }
+
+    @Test
+    fun testRadio() = testIn("Radio Test") {
+        val radio = extension.radio(
+            Album("spotify:album:6a6wiQNPcQMV8K17HDKtrC", "")
+        )
+        println(radio)
+        val tracks = extension.loadTracks(radio).loadAll()
+        println("Tracks: ${tracks.size}")
+    }
 }

@@ -9,6 +9,7 @@ import dev.brahmkshatriya.echo.common.models.EchoMediaItem.Companion.toMediaItem
 import dev.brahmkshatriya.echo.common.models.ImageHolder
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
 import dev.brahmkshatriya.echo.common.models.Playlist
+import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Tab
@@ -63,7 +64,8 @@ fun Sections.toShelves(
     emptyTitle: String? = null
 ): List<Shelf> {
     return items?.mapNotNull { item ->
-        if (item.data!!.typename == Sections.Typename.BrowseRelatedSectionData)
+        item.data ?: return@mapNotNull null
+        if (item.data.typename == Sections.Typename.BrowseRelatedSectionData)
             return@mapNotNull item.toCategory(queries)
 
         val title = item.data.title?.transformedLabel ?: emptyTitle ?: ""
@@ -96,6 +98,11 @@ fun Sections.toShelves(
 
             Sections.Typename.HomeFeedBaselineSectionData -> item.sectionItems?.items
                 ?.firstOrNull()?.content?.data?.toMediaItem()?.toShelf()
+
+            Sections.Typename.BrowseUnsupportedSectionData -> {
+                println(item)
+                null
+            }
         }
     }!!
 }
@@ -143,6 +150,15 @@ fun Item.Playlist.toPlaylist(): Playlist? {
             (ownerV2?.data?.toMediaItem() as? EchoMediaItem.Profile.UserItem)?.user
         ),
         tracks = content?.totalCount
+    )
+}
+
+fun Item.Playlist.toRadio(): Radio? {
+    return Radio(
+        id = uri ?: return null,
+        title = name ?: return null,
+        subtitle = description?.removeHtml() ?: "",
+        cover = images?.items?.firstOrNull()?.toImageHolder()
     )
 }
 
@@ -387,14 +403,14 @@ private fun Metadata4Track.Date.toReleaseDate(): String? {
 }
 
 fun Metadata4Track.Format.isWorking(hasPremium: Boolean) = when (this) {
-    Metadata4Track.Format.OGG_VORBIS_320 -> hasPremium
-    Metadata4Track.Format.OGG_VORBIS_160 -> hasPremium
-    Metadata4Track.Format.OGG_VORBIS_96 -> hasPremium
-    Metadata4Track.Format.MP4_256_DUAL -> hasPremium
-    Metadata4Track.Format.MP4_128_DUAL -> hasPremium
+    Metadata4Track.Format.OGG_VORBIS_320 -> false
+    Metadata4Track.Format.OGG_VORBIS_160 -> false
+    Metadata4Track.Format.OGG_VORBIS_96 -> false
+    Metadata4Track.Format.MP4_256_DUAL -> false
+    Metadata4Track.Format.MP4_128_DUAL -> false
     Metadata4Track.Format.MP4_256 -> hasPremium
     Metadata4Track.Format.MP4_128 -> true
-    Metadata4Track.Format.AAC_24 -> hasPremium
+    Metadata4Track.Format.AAC_24 -> false
     Metadata4Track.Format.MP3_96 -> false
 }
 

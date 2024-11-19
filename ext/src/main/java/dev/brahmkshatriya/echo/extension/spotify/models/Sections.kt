@@ -44,6 +44,7 @@ data class Sections(
         HomeRecentlyPlayedSectionData,
         BrowseGenericSectionData,
         BrowseGridSectionData,
+        BrowseUnsupportedSectionData,
         BrowseRelatedSectionData;
     }
 

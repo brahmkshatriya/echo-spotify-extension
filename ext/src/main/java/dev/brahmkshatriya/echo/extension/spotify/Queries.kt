@@ -14,6 +14,7 @@ import dev.brahmkshatriya.echo.extension.spotify.models.HomeFeed
 import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track
 import dev.brahmkshatriya.echo.extension.spotify.models.ProfileAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.SearchDesktop
+import dev.brahmkshatriya.echo.extension.spotify.models.SeedToPlaylist
 import dev.brahmkshatriya.echo.extension.spotify.models.StorageResolve
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
@@ -215,6 +216,12 @@ class Queries(
             }?format=json&vocalRemoval=false&market=from_token"
         ).build()
     ).let { api.json.decode<ColorLyrics>(it) }
+
+    suspend fun seedToPlaylist(uri: String) = api.call(
+        Request.Builder()
+            .url("https://spclient.wg.spotify.com/inspiredby-mix/v2/seed_to_playlist/$uri?response-format=json")
+            .build()
+    ).let { api.json.decode<SeedToPlaylist>(it) }
 
     suspend fun homeFeedChips(token: String? = null) = api.graphQuery<HomeFeed>(
         "homeFeedChips",
