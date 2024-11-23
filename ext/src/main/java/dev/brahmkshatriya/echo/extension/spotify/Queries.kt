@@ -1,31 +1,40 @@
 package dev.brahmkshatriya.echo.extension.spotify
 
-import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.applyPagePagination
-import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.applySectionPagination
 import dev.brahmkshatriya.echo.extension.spotify.models.AccountAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.AreEntitiesInLibrary
+import dev.brahmkshatriya.echo.extension.spotify.models.ArtistOverview
 import dev.brahmkshatriya.echo.extension.spotify.models.Browse
 import dev.brahmkshatriya.echo.extension.spotify.models.BrowseAll
 import dev.brahmkshatriya.echo.extension.spotify.models.Canvas
 import dev.brahmkshatriya.echo.extension.spotify.models.ColorLyrics
+import dev.brahmkshatriya.echo.extension.spotify.models.EntitiesForRecentlyPlayed
 import dev.brahmkshatriya.echo.extension.spotify.models.FetchPlaylist
 import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
+import dev.brahmkshatriya.echo.extension.spotify.models.GetTrack
 import dev.brahmkshatriya.echo.extension.spotify.models.HomeFeed
+import dev.brahmkshatriya.echo.extension.spotify.models.InternalLinkRecommenderTrack
+import dev.brahmkshatriya.echo.extension.spotify.models.LibraryV3
 import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track
 import dev.brahmkshatriya.echo.extension.spotify.models.ProfileAttributes
+import dev.brahmkshatriya.echo.extension.spotify.models.RecentlyPlayed
 import dev.brahmkshatriya.echo.extension.spotify.models.SearchDesktop
 import dev.brahmkshatriya.echo.extension.spotify.models.SeedToPlaylist
+import dev.brahmkshatriya.echo.extension.spotify.models.SeoRecommendedPlaylist
 import dev.brahmkshatriya.echo.extension.spotify.models.StorageResolve
+import dev.brahmkshatriya.echo.extension.spotify.models.UserFollowers
+import dev.brahmkshatriya.echo.extension.spotify.models.UserProfileView
+import dev.brahmkshatriya.echo.extension.spotify.models.UserTopContent
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import okhttp3.Request
+import kotlinx.serialization.json.putJsonObject
 import java.util.TimeZone
 
 class Queries(
-    val api: SpotifyApi,
+    private val api: SpotifyApi,
 ) {
 
     suspend fun profileAttributes() = api.graphQuery<ProfileAttributes>(
@@ -37,6 +46,14 @@ class Queries(
         "accountAttributes",
         "4fbd57be3c6ec2157adcc5b8573ec571f61412de23bbb798d8f6a156b7d34cdf"
     )
+
+    private fun JsonObjectBuilder.applyPagePagination(offset: Int, limit: Int) = apply {
+        putJsonObject("pagePagination") { put("offset", offset); put("limit", limit) }
+    }
+
+    private fun JsonObjectBuilder.applySectionPagination(offset: Int, limit: Int) = apply {
+        putJsonObject("sectionPagination") { put("offset", offset); put("limit", limit) }
+    }
 
     suspend fun browseAll() = api.graphQuery<BrowseAll>(
         "browseAll",
@@ -57,20 +74,20 @@ class Queries(
         }
     )
 
-    private fun JsonObjectBuilder.applySearchVariables(query: String, offset: Int) {
+    private fun JsonObjectBuilder.applySearchVariables(query: String, topResults: Int) {
         put("searchTerm", query)
-        put("offset", offset)
+        put("offset", 0)
         put("limit", 10)
-        put("numberOfTopResults", 5)
+        put("numberOfTopResults", topResults)
         put("includeAudiobooks", true)
         put("includePreReleases", true)
     }
 
-    suspend fun searchDesktop(query: String) = api.graphQuery<SearchDesktop>(
+    suspend fun searchDesktop(query: String, topResults: Int = 1) = api.graphQuery<SearchDesktop>(
         "searchDesktop",
         "2ae11a661a59c58695ad9b8bd6605dce6e3876f900555e21543c19f7a0a0ea6a",
         buildJsonObject {
-            applySearchVariables(query, 0)
+            applySearchVariables(query, topResults)
             put("includeArtistHasConcertsField", false)
             put("includeLocalConcertsField", false)
         }
@@ -151,6 +168,14 @@ class Queries(
         }
     )
 
+    suspend fun seoRecommendedPlaylist(uri: String) = api.graphQuery<SeoRecommendedPlaylist>(
+        "seoRecommendedPlaylist",
+        "dd6046b7b307a0ed0524be42e612b2af1bc93d3e34e5c19e4b2fc2fdc48bcec4",
+        buildJsonObject {
+            put("uri", uri)
+        }
+    )
+
     suspend fun getAlbum(uri: String) = api.graphQuery<GetAlbum>(
         "getAlbum",
         "8f4cd5650f9d80349dbe68684057476d8bf27a5c51687b2b1686099ab5631589",
@@ -190,38 +215,37 @@ class Queries(
         }
     )
 
-//    suspend fun getTrack(uri:String) = api.query<GetTrack>(
-//        "getTrack",
-//        "ae85b52abb74d20a4c331d4143d4772c95f34757bfa8c625474b912b9055b5c0",
-//        buildJsonObject {
-//            put("uri", uri)
-//        }
-//    )
+    suspend fun internalLinkRecommenderTrack(uri: String) =
+        api.graphQuery<InternalLinkRecommenderTrack>(
+            "internalLinkRecommenderTrack",
+            "eda0a1e9140af4114340bf3098980172dfd1003b65cfc980c36ab238dbfcef84",
+            buildJsonObject {
+                put("uri", uri)
+            }
+        )
 
-    suspend fun metadata4Track(id: String) = api.call(
-        Request.Builder()
-            .url("https://spclient.wg.spotify.com/metadata/4/track/$id").build()
-    ).let { api.json.decode<Metadata4Track>(it) }
 
-    suspend fun storageResolve(id: String) = api.call(
-        Request.Builder()
-            .url("https://spclient.wg.spotify.com/storage-resolve/v2/files/audio/interactive/10/$id?version=10000000&product=9&platform=39&alt=json")
-            .build()
-    ).let { api.json.decode<StorageResolve>(it) }
+    suspend fun getTrack(uri: String) = api.graphQuery<GetTrack>(
+        "getTrack",
+        "ae85b52abb74d20a4c331d4143d4772c95f34757bfa8c625474b912b9055b5c0",
+        buildJsonObject {
+            put("uri", uri)
+        }
+    )
 
-    suspend fun colorLyrics(id: String, img: String) = api.call(
-        Request.Builder().url(
-            "https://spclient.wg.spotify.com/color-lyrics/v2/track/$id/image/${
-                api.urlEncode(img)
-            }?format=json&vocalRemoval=false&market=from_token"
-        ).build()
-    ).let { api.json.decode<ColorLyrics>(it) }
+    suspend fun metadata4Track(id: String) = api.clientQuery<Metadata4Track>("metadata/4/track/$id")
 
-    suspend fun seedToPlaylist(uri: String) = api.call(
-        Request.Builder()
-            .url("https://spclient.wg.spotify.com/inspiredby-mix/v2/seed_to_playlist/$uri?response-format=json")
-            .build()
-    ).let { api.json.decode<SeedToPlaylist>(it) }
+    suspend fun storageResolve(id: String) = api.clientQuery<StorageResolve>(
+        "storage-resolve/v2/files/audio/interactive/10/$id?version=10000000&product=9&platform=39&alt=json"
+    )
+
+    suspend fun colorLyrics(id: String, img: String) = api.clientQuery<ColorLyrics>(
+        "color-lyrics/v2/track/$id/image/${api.urlEncode(img)}?format=json&vocalRemoval=false&market=from_token"
+    )
+
+    suspend fun seedToPlaylist(uri: String) = api.clientQuery<SeedToPlaylist>(
+        "inspiredby-mix/v2/seed_to_playlist/$uri?response-format=json"
+    )
 
     suspend fun homeFeedChips(token: String? = null) = api.graphQuery<HomeFeed>(
         "homeFeedChips",
@@ -253,4 +277,128 @@ class Queries(
             put("sectionItemsLimit", 10)
         }
     )
+
+    suspend fun queryArtistOverview(uri: String) = api.graphQuery<ArtistOverview>(
+        "queryArtistOverview",
+        "4bc52527bb77a5f8bbb9afe491e9aa725698d29ab73bff58d49169ee29800167",
+        buildJsonObject {
+            put("uri", uri)
+            put("locale", "")
+        }
+    )
+
+    suspend fun userTopContent() = api.graphQuery<UserTopContent>(
+        "userTopContent",
+        "feb6d55177e2cbce2ac59214f9493f1ef2e4368eec01b3d4c3468fa1b97336e2",
+        buildJsonObject {
+            put("includeTopArtists", true)
+            putJsonObject("topArtistsInput") {
+                put("offset", 0)
+                put("limit", 10)
+                put("sortBy", "AFFINITY")
+                put("timeRange", "SHORT_TERM")
+            }
+            put("includeTopTracks", true)
+            putJsonObject("topTracksInput") {
+                put("offset", 0)
+                put("limit", 4)
+                put("sortBy", "AFFINITY")
+                put("timeRange", "SHORT_TERM")
+            }
+        }
+    )
+
+    suspend fun profileWithPlaylists(id: String) = api.clientQuery<UserProfileView>(
+        "user-profile-view/v3/profile/$id?playlist_limit=10&artist_limit=10&episode_limit=10"
+    )
+
+    suspend fun profileFollowers(id: String) = api.clientQuery<UserFollowers>(
+        "user-profile-view/v3/profile/$id/followers"
+    )
+
+    suspend fun profileFollowing(id: String) = api.clientQuery<UserFollowers>(
+        "user-profile-view/v3/profile/$id/following"
+    )
+
+    suspend fun followUsers(vararg ids: String) = api.graphMutate(
+        "followUsers",
+        "c00e0cb6c7766e7230fc256cf4fe07aec63b53d1160a323940fce7b664e95596",
+        buildJsonObject {
+            putJsonArray("usernames") {
+                ids.forEach { add(it) }
+            }
+        }
+    )
+
+    suspend fun unfollowUsers(vararg ids: String) = api.graphMutate(
+        "unfollowUsers",
+        "c00e0cb6c7766e7230fc256cf4fe07aec63b53d1160a323940fce7b664e95596",
+        buildJsonObject {
+            putJsonArray("usernames") {
+                ids.forEach { add(it) }
+            }
+        }
+    )
+
+    suspend fun removeFromLibrary(vararg uris: String) = api.graphMutate(
+        "removeFromLibrary",
+        "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915",
+        buildJsonObject {
+            putJsonArray("uris") {
+                uris.forEach { add(it) }
+            }
+        }
+    )
+
+    suspend fun addToLibrary(vararg uris: String) = api.graphMutate(
+        "addToLibrary",
+        "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915",
+        buildJsonObject {
+            putJsonArray("uris") {
+                uris.forEach { add(it) }
+            }
+        }
+    )
+
+    suspend fun libraryV3(
+        offset: Int, filter: String? = null, folderUri: String? = null
+    ) = api.graphQuery<LibraryV3>(
+        "libraryV3",
+        "866c12e82c0edea47a0b9e8f91f35602b6e6ce75740a6da2c790c0003a70fcd1",
+        buildJsonObject {
+            putJsonArray("filters") {
+                if (filter != null) add(filter)
+            }
+            put("order", "Recents")
+            put("textFilter", "")
+            putJsonArray("features") {
+                add("LIKED_SONGS")
+                add("YOUR_EPISODES")
+            }
+            put("limit", 10)
+            put("offset", offset)
+            put("flatten", false)
+            putJsonArray("expandedFolders") {}
+            put("folderUri", folderUri)
+            put("includeFoldersWhenFlattening", true)
+        }
+    )
+
+    suspend fun recentlyPlayed(userId: String) = api.clientQuery<RecentlyPlayed>(
+        "recently-played/v3/user/$userId/recently-played?format=json&offset=0&limit=50&filter=default%2Ccollection-new-episodes"
+    )
+
+    suspend fun fetchEntitiesForRecentlyPlayed(uris: List<String>) =
+        api.graphQuery<EntitiesForRecentlyPlayed>(
+            "fetchEntitiesForRecentlyPlayed",
+            "8e4eb5eafa2837eca337dc11321ac285a01f9a056a7ac83f77a66f9998b06a73",
+            buildJsonObject {
+                put(
+                    "uris",
+                    buildJsonArray {
+                        uris.forEach { add(it) }
+                    }
+                )
+            }
+        )
 }

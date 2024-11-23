@@ -1,6 +1,8 @@
 package dev.brahmkshatriya.echo.extension
 
 import dev.brahmkshatriya.echo.common.models.Album
+import dev.brahmkshatriya.echo.common.models.Artist
+import dev.brahmkshatriya.echo.common.models.EchoMediaItem.Companion.toMediaItem
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Track
@@ -14,7 +16,6 @@ import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
-import okhttp3.Request
 import org.junit.After
 import org.junit.Assert
 import org.junit.Before
@@ -79,14 +80,16 @@ class LibraryTest {
         load.forEach { it.print() }
     }
 
-    private val searchQuery = "hero"
 
     @Test
     fun testSearch() = testIn("Testing Search") {
+        val searchQuery = "hero"
+        val quickSearch = extension.quickSearch(searchQuery)
+        quickSearch.forEach { println(it) }
         val tabs = extension.searchTabs(searchQuery)
-        tabs.forEach {
-            println("Tab: $it")
-            val feed = extension.searchFeed(searchQuery, it)
+        tabs.forEach { tab ->
+            println("Tab: $tab")
+            val feed = extension.searchFeed(searchQuery, tab)
             val shelves = feed.loadFirst()
             shelves.forEach { it.print() }
         }
@@ -106,13 +109,10 @@ class LibraryTest {
     }
 
     @Test
-    fun getLyrics() = testIn("Get Lyrics") {
-        val lyrics = extension.queries.api.call(
-            Request.Builder()
-                .url("https://spclient.wg.spotify.com/color-lyrics/v2/track/71NTIlx3GOoJdDDChHcMx3/image/https%3A%2F%2Fi.scdn.co%2Fimage%2Fab67616d0000b273b1b4f333c30b954b3ccd4d81?format=json&vocalRemoval=false&market=from_token")
-                .build()
-        )
-        println(lyrics)
+    fun trackShelves() = testIn("Track Shelves") {
+        val track = extension.loadTrack(Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", ""))
+        val shelves = extension.getShelves(track).loadFirst()
+        shelves.forEach { it.print() }
     }
 
     @Test
@@ -131,8 +131,11 @@ class LibraryTest {
             Playlist("spotify:playlist:6ZBHUwSlPqlvLsw0MKJtLU", "", false)
         )
         println(playlist)
-        val tracks = extension.loadTracks(playlist).loadAll()
+        val tracks = extension.loadTracks(playlist).loadFirst()
         println("Tracks: ${tracks.size}")
+        val shelves = extension.getShelves(playlist).loadFirst()
+        println("Shelves: ${shelves.size}")
+        shelves.forEach { it.print() }
     }
 
     @Test
@@ -141,8 +144,11 @@ class LibraryTest {
             Album("spotify:album:6a6wiQNPcQMV8K17HDKtrC", "")
         )
         println(album)
-        val tracks = extension.loadTracks(album).loadAll()
+        val tracks = extension.loadTracks(album).loadFirst()
         println("Tracks: ${tracks.size}")
+        val shelves = extension.getShelves(album).loadFirst()
+        println("Shelves: ${shelves.size}")
+        shelves.forEach { it.print() }
     }
 
     @Test
@@ -163,5 +169,49 @@ class LibraryTest {
         println(radio)
         val tracks = extension.loadTracks(radio).loadAll()
         println("Tracks: ${tracks.size}")
+    }
+
+    @Test
+    fun testArtist() = testIn("Artist Test") {
+        val artist = extension.loadArtist(
+            Artist("spotify:artist:3mVL1qynaYs31rgyDTytkS", "")
+        )
+        println(artist)
+        val shelves = extension.getShelves(artist).loadFirst()
+        println("Shelves: ${shelves.size}")
+        shelves.forEach { it.print() }
+    }
+
+    @Test
+    fun testUser() = testIn("User Test") {
+        val user = extension.loadArtist(
+            Artist("spotify:user:aeivypek9coyo5quqvlgn4x3g", "")
+        )
+        println(user)
+        val shelves = extension.getShelves(user).loadFirst()
+        println("Shelves: ${shelves.size}")
+        shelves.forEach { it.print() }
+    }
+
+    @Test
+    fun testSaveItem() = testIn("Save Item Test") {
+        val track = Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", "").toMediaItem()
+        extension.saveToLibrary(track)
+    }
+
+    @Test
+    fun testRemoveItem() = testIn("Remove Item Test") {
+        val track = Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", "").toMediaItem()
+        extension.removeFromLibrary(track)
+    }
+
+    @Test
+    fun testLibrary() = testIn("Library Test"){
+        val tabs = extension.getLibraryTabs()
+        println(tabs)
+        tabs.forEach { tab ->
+            val feed = extension.getLibraryFeed(tab).loadAll()
+            println("Tab: $tab - ${feed.size}")
+        }
     }
 }

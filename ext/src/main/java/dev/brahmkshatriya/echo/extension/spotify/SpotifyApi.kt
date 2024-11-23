@@ -3,12 +3,14 @@ package dev.brahmkshatriya.echo.extension.spotify
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import kotlinx.io.IOException
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.internal.commonIsSuccessful
 import java.net.URLEncoder
 
 class SpotifyApi(
@@ -23,7 +25,7 @@ class SpotifyApi(
         }
     val json = Json()
 
-    val client = OkHttpClient.Builder()
+    private val client = OkHttpClient.Builder()
         .addInterceptor { chain ->
             val builder = chain.request().newBuilder()
             builder.addHeader(userAgent.first, userAgent.second)
@@ -37,21 +39,51 @@ class SpotifyApi(
         }
         .build()
 
+    data class Response<T>(
+        val json: T,
+        val raw: String
+    )
+
     suspend inline fun <reified T> graphQuery(
         operationName: String,
         persistedQuery: String,
         variables: JsonObject = buildJsonObject { },
         print: Boolean = false
-    ): T {
-        println(variables.toString())
+    ): Response<T> {
         val builder = StringBuilder("https://api-partner.spotify.com/pathfinder/v1/query")
             .append("?operationName=${operationName}")
             .append("&variables=${urlEncode(variables)}")
-            .append("&extensions=${extensions(persistedQuery)}")
+            .append("&extensions=${urlEncode((extensions(persistedQuery)))}")
         val request = Request.Builder().url(builder.toString()).build()
-        return json.decode<T>(
-            call(request).also { if (print) println(it) }
+        val raw = call(request)
+        if (print) println(raw)
+        return Response(json.decode<T>(raw), raw)
+    }
+
+    suspend fun graphMutate(
+        operationName: String,
+        persistedQuery: String,
+        variables: JsonObject
+    ): String {
+        val request = Request.Builder()
+            .url("https://api-partner.spotify.com/pathfinder/v1/query")
+            .post(
+                buildJsonObject {
+                    put("operationName", operationName)
+                    put("variables", variables)
+                    put("extensions", extensions(persistedQuery))
+                }.toString().toRequestBody("application/json".toMediaType())
+            )
+        return call(request.build())
+    }
+
+    suspend inline fun <reified T> clientQuery(path: String): Response<T> {
+        val raw = call(
+            Request.Builder()
+                .url("https://spclient.wg.spotify.com/$path")
+                .build()
         )
+        return Response(json.decode<T>(raw), raw)
     }
 
     suspend fun call(request: Request): String {
@@ -68,28 +100,23 @@ class SpotifyApi(
     fun urlEncode(data: JsonObject) = urlEncode(data.toString())
     fun urlEncode(data: String): String = URLEncoder.encode(data, "UTF-8")
 
-    fun extensions(persistedQuery: String): String {
-        val extensions = buildJsonObject {
+    fun extensions(persistedQuery: String): JsonObject {
+        return buildJsonObject {
             putJsonObject("persistedQuery") {
                 put("version", 1)
                 put("sha256Hash", persistedQuery)
             }
         }
-        return urlEncode(extensions)
     }
 
-    suspend fun callGetBody(request: Request) = client.newCall(request).await().body.string()
+    suspend fun callGetBody(request: Request) = run {
+        val res = client.newCall(request).await()
+        if (res.commonIsSuccessful) res.body.string()
+        else throw IOException("Failed to call ${request.url}: ${res.code}")
+    }
 
     companion object {
         val userAgent =
             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-
-        fun JsonObjectBuilder.applyPagePagination(offset: Int, limit: Int) = apply {
-            putJsonObject("pagePagination") { put("offset", offset); put("limit", limit) }
-        }
-
-        fun JsonObjectBuilder.applySectionPagination(offset: Int, limit: Int) = apply {
-            putJsonObject("sectionPagination") { put("offset", offset); put("limit", limit) }
-        }
     }
 }

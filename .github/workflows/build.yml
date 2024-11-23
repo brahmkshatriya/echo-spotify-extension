@@ -80,9 +80,11 @@ jobs:
         env:
           BOT_ID: ${{ secrets.TELEGRAM_BOT_ID }}
           CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
         run: |
           message=$(echo -e "${{ env.NAME }}\n$(echo -e "${{ github.event.head_commit.message }}" | sed 's/[~>|.!+-=#]/\\&/g')")
           curl -F "chat_id=${{ env.CHANNEL_ID }}" \
+          -F "message_thread_id=${{ env.THREAD_ID }}" \
           -F "document=@${{ env.APP_PATH }}" \
           -F "caption=${message}" \
           -F "parse_mode=MarkdownV2" \

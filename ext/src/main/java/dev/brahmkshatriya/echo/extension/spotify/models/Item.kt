@@ -4,13 +4,14 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator
+import dev.brahmkshatriya.echo.extension.spotify.models.Album as AlbumItem
 
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
 @JsonClassDiscriminator("__typename")
-sealed class Item {
+sealed interface Item {
     @SerialName("__typename")
-    abstract val typename: String
+    val typename: String
 
     @Serializable
     @SerialName("BrowseSectionContainer")
@@ -18,7 +19,7 @@ sealed class Item {
         @SerialName("__typename")
         override val typename: String,
         val data: CardData? = null,
-    ) : Item()
+    ) : Item
 
     @Suppress("unused")
     @Serializable
@@ -31,7 +32,19 @@ sealed class Item {
         val backgroundColor: BackgroundColor? = null,
         val featureUri: String? = null,
         val iconOverlay: Artwork? = null,
-    ) : Item()
+    ) : Item
+
+    @Serializable
+    @SerialName("PseudoPlaylist")
+    data class PseudoPlaylist(
+        @SerialName("__typename")
+        override val typename: String,
+
+        val name: String? = null,
+        val uri: String? = null,
+        val image: Artwork? = null,
+        val count: Int? = null,
+    ) : Item
 
     @Serializable
     @SerialName("Playlist")
@@ -47,7 +60,7 @@ sealed class Item {
         val name: String? = null,
         val ownerV2: OwnerWrapper? = null,
         val uri: String? = null,
-    ) : Item() {
+    ) : Item {
         @Serializable
         data class Content(
             val items: List<Item>? = null,
@@ -70,43 +83,22 @@ sealed class Item {
     data class Album(
         @SerialName("__typename")
         override val typename: String,
-        val copyright: Copyright? = null,
-        val courtesyLine: String? = null,
-        val label: String? = null,
-        val saved: Boolean? = null,
-        val tracksV2: TracksV2? = null,
-        val discs: Discs? = null,
-        val artists: Artists? = null,
-        val coverArt: Artwork? = null,
-        val name: String? = null,
-        val uri: String? = null,
-        val date: Date? = null,
-        val playability: Playability? = null,
-        val type: String? = null,
-    ) : Item() {
-        @Serializable
-        data class TracksV2(
-            val items: List<TrackItem>? = null,
-            val totalCount: Int? = null,
-        )
-
-        @Serializable
-        data class TrackItem(
-            val track: Track? = null,
-            val uid: String? = null,
-        )
-
-        @Serializable
-        data class Track(
-            override val artists: Artists?,
-            override val contentRating: ContentRating?,
-            override val duration: Duration?,
-            override val name: String?,
-            override val playability: Playability?,
-            override val playcount: String?,
-            override val uri: String?
-        ) : ITrack
-    }
+        override val copyright: Copyright? = null,
+        override val courtesyLine: String? = null,
+        override val label: String? = null,
+        override val saved: Boolean? = null,
+        override val tracksV2: TracksV2? = null,
+        override val discs: Discs? = null,
+        override val artists: Artists? = null,
+        override val coverArt: Artwork? = null,
+        override val name: String? = null,
+        override val uri: String? = null,
+        override val date: Date? = null,
+        override val playability: Playability? = null,
+        override val type: String? = null,
+        override val id: String? = null,
+        override val moreAlbumsByArtist: Artists? = null,
+    ) : Item, IAlbum
 
     @Serializable
     @SerialName("PreRelease")
@@ -119,7 +111,7 @@ sealed class Item {
         val releaseDate: Date? = null,
         val timezone: String? = null,
         val uri: String? = null,
-    ) : Item() {
+    ) : Item {
         @Serializable
         data class Content(
             val artists: Artists? = null,
@@ -136,10 +128,16 @@ sealed class Item {
         @SerialName("__typename")
         override val typename: String,
 
-        val profile: Profile? = null,
-        val uri: String? = null,
-        val visuals: Visuals? = null,
-    ) : Item()
+        override val profile: Profile? = null,
+        override val uri: String? = null,
+        override val visuals: Visuals? = null,
+        override val discography: Discography? = null,
+        override val id: String? = null,
+        override val relatedContent: RelatedContent? = null,
+        override val relatedVideos: RelatedVideos? = null,
+        override val saved: Boolean? = null,
+        override val stats: Stats? = null,
+    ) : Item, IArtist
 
     @Serializable
     @SerialName("Episode")
@@ -159,7 +157,7 @@ sealed class Item {
         val releaseDate: Date? = null,
         val restrictions: Restrictions? = null,
         val uri: String? = null,
-    ) : Item()
+    ) : Item
 
     @Serializable
     @SerialName("Podcast")
@@ -173,7 +171,7 @@ sealed class Item {
         val publisher: Profile? = null,
         val topics: Topics? = null,
         val uri: String? = null,
-    ) : Item()
+    ) : Item
 
     @Serializable
     @SerialName("Track")
@@ -181,7 +179,7 @@ sealed class Item {
         @SerialName("__typename")
         override val typename: String,
 
-        val albumOfTrack: AlbumOfTrack? = null,
+        override val albumOfTrack: AlbumItem? = null,
         override val artists: Artists? = null,
         val associations: Associations? = null,
         override val contentRating: ContentRating? = null,
@@ -191,7 +189,11 @@ sealed class Item {
         override val playability: Playability? = null,
         override val playcount: String? = null,
         override val uri: String? = null,
-    ) : Item(), ITrack
+        override val saved: Boolean? = null,
+        override val trackNumber: Long? = null,
+        override val firstArtist: Artists? = null,
+        override val otherArtists: Artists? = null,
+    ) : Item, ITrack
 
     @Serializable
     @SerialName("User")
@@ -205,7 +207,7 @@ sealed class Item {
         val id: String? = null,
         val username: String? = null,
         val uri: String? = null,
-    ) : Item()
+    ) : Item
 
     @Serializable
     @SerialName("Genre")
@@ -216,9 +218,20 @@ sealed class Item {
         val image: Artwork? = null,
         val name: String? = null,
         val uri: String? = null,
-    ) : Item()
+    ) : Item
 
-    @Suppress("unused")
+    @Serializable
+    @SerialName("Folder")
+    data class Folder(
+        @SerialName("__typename")
+        override val typename: String,
+
+        val name: String? = null,
+        val uri: String? = null,
+        val playlistCount: Int? = null,
+        val folderCount: Int? = null,
+    ) : Item
+
     @Serializable
     @SerialName("NotFound")
     data class NotFound(
@@ -226,20 +239,26 @@ sealed class Item {
         override val typename: String,
 
         val message: String? = null,
-    ) : Item()
+    ) : Item
 
-    @Suppress("unused")
+    @Serializable
+    @SerialName("GenericError")
+    data class GenericError(
+        @SerialName("__typename")
+        override val typename: String
+    ) : Item
+
     @Serializable
     @SerialName("RestrictedContent")
     data class RestrictedContent(
         @SerialName("__typename")
         override val typename: String,
-    ) : Item()
+    ) : Item
 
     @Serializable
     data class Wrapper(
         @SerialName("__typename")
-        val typename: String,
+        val typename: String? = null,
         val data: Item? = null,
     )
 
