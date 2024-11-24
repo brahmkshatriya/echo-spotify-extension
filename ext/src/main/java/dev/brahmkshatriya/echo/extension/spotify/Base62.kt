@@ -15,21 +15,20 @@ object Base62 {
 
     fun encode(message: String, length: Int = DEFAULT_LENGTH): String {
         val bytes = hexToBytes(message)
-        val leadingZeros = bytes.takeWhile { it == 0.toByte() }.size
         val indices = convert(bytes, STANDARD_BASE, TARGET_BASE, length)
-        return "0".repeat(leadingZeros) + translate(indices, alphabet).decodeToString()
+        val encoded = translate(indices, alphabet).decodeToString()
+        val zerosToAdd = 22 - encoded.length
+        return "0".repeat(maxOf(zerosToAdd, 0)) + encoded
     }
 
     fun decode(encoded: String, length: Int = DEFAULT_LENGTH): String {
-        val leadingZeros = encoded.takeWhile { it == '0' }.length
-        val prepared = translate(encoded.drop(leadingZeros).toByteArray(), lookup)
-        return bytesToHex(
-            ByteArray(leadingZeros) + convert(prepared, TARGET_BASE, STANDARD_BASE, length)
-        ).trimStart('0')
+        val prepared = translate(encoded.toByteArray(), lookup)
+        val decoded = convert(prepared, TARGET_BASE, STANDARD_BASE, length)
+        return bytesToHex(decoded)
     }
 
     private fun translate(indices: ByteArray, dictionary: ByteArray) =
-        ByteArray(indices.size) { dictionary[indices[it].toInt()] }
+        ByteArray(indices.size) { dictionary[indices[it].toInt() and 0xFF] }
 
     private fun convert(input: ByteArray, sourceBase: Int, targetBase: Int, length: Int): ByteArray {
         val estimatedLength = if (length == -1)
@@ -43,7 +42,9 @@ object Base62 {
             for (b in source) {
                 val accumulator = (b.toInt() and 0xFF) + remainder * sourceBase
                 remainder = accumulator % targetBase
-                if (quotient.size() > 0 || accumulator / targetBase > 0) quotient.write(accumulator / targetBase)
+                if (quotient.size() > 0 || accumulator / targetBase > 0) {
+                    quotient.write(accumulator / targetBase)
+                }
             }
             output.write(remainder)
             source = quotient.toByteArray()

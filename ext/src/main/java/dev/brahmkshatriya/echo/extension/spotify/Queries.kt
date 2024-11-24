@@ -7,7 +7,10 @@ import dev.brahmkshatriya.echo.extension.spotify.models.Browse
 import dev.brahmkshatriya.echo.extension.spotify.models.BrowseAll
 import dev.brahmkshatriya.echo.extension.spotify.models.Canvas
 import dev.brahmkshatriya.echo.extension.spotify.models.ColorLyrics
+import dev.brahmkshatriya.echo.extension.spotify.models.CreatePlaylist
+import dev.brahmkshatriya.echo.extension.spotify.models.EditablePlaylists
 import dev.brahmkshatriya.echo.extension.spotify.models.EntitiesForRecentlyPlayed
+import dev.brahmkshatriya.echo.extension.spotify.models.FetchLibraryTracks
 import dev.brahmkshatriya.echo.extension.spotify.models.FetchPlaylist
 import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
 import dev.brahmkshatriya.echo.extension.spotify.models.GetTrack
@@ -15,6 +18,7 @@ import dev.brahmkshatriya.echo.extension.spotify.models.HomeFeed
 import dev.brahmkshatriya.echo.extension.spotify.models.InternalLinkRecommenderTrack
 import dev.brahmkshatriya.echo.extension.spotify.models.LibraryV3
 import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track
+import dev.brahmkshatriya.echo.extension.spotify.models.PlaylistChanges
 import dev.brahmkshatriya.echo.extension.spotify.models.ProfileAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.RecentlyPlayed
 import dev.brahmkshatriya.echo.extension.spotify.models.SearchDesktop
@@ -401,4 +405,190 @@ class Queries(
                 )
             }
         )
+
+    suspend fun fetchLibraryTracks(offset: Int) = api.graphQuery<FetchLibraryTracks>(
+        "fetchLibraryTracks",
+        "1cb5df9343e3e11ecca539ee85621136f8c1226768a9b7641012c4e6a2339872",
+        buildJsonObject {
+            put("limit", 50)
+            put("offset", offset)
+        }
+    )
+
+    suspend fun editablePlaylists(offset: Int, folderUri: String? = null, vararg uris: String) =
+        api.graphQuery<EditablePlaylists>(
+            "editablePlaylists",
+            "acb5390f2929bdcad4c6afe1c08bdbe09375f50fdb29d75244f67e9aee77ebc4",
+            buildJsonObject {
+                put("textFilter", "")
+                put("limit", 50)
+                put("offset", offset)
+                put("folderUri", folderUri)
+                putJsonArray("uris") {
+                    uris.forEach { add(it) }
+                }
+            }
+        )
+
+    private fun JsonObjectBuilder.applyOps(
+        kind: Int,
+        key: String,
+        builderAction: JsonObjectBuilder.() -> Unit
+    ) = apply {
+        putJsonArray("ops") {
+            add(
+                buildJsonObject {
+                    put("kind", kind)
+                    putJsonObject(key, builderAction)
+                }
+            )
+        }
+    }
+
+    private fun JsonObjectBuilder.applyNameDesc(name: String, desc: String?) =
+        putJsonObject("updateListAttributes") {
+            putJsonObject("newAttributes") {
+                putJsonObject("values") {
+                    put("name", name)
+                    put("description", desc ?: "")
+                    putJsonArray("formatAttributes") {}
+                    putJsonArray("pictureSize") {}
+                }
+                putJsonArray("noValue") {}
+            }
+        }
+
+    suspend fun createPlaylist(name: String, desc: String?) = api.clientMutate<CreatePlaylist>(
+        "playlist/v2/playlist",
+        buildJsonObject {
+            putJsonArray("ops") {
+                add(
+                    buildJsonObject {
+                        put("kind", 6)
+                        applyNameDesc(name, desc)
+                    }
+                )
+            }
+        }
+    )
+
+    suspend fun playlistToLibrary(userId: String, uri: String) = api.clientMutate<PlaylistChanges>(
+        "playlist/v2/user/$userId/rootlist/changes",
+        buildJsonObject {
+            putJsonArray("deltas") {
+                add(
+                    buildJsonObject {
+                        applyOps(2, "add") {
+                            putJsonArray("items") {
+                                add(
+                                    buildJsonObject {
+                                        put("uri", uri)
+                                        putJsonObject("attributes") {
+                                            put("timestamp", System.currentTimeMillis())
+                                            putJsonArray("formatAttributes") {}
+                                            putJsonArray("availableSignals") {}
+                                        }
+                                    }
+                                )
+                            }
+                            put("addFirst", true)
+                        }
+                        applyClientInfo()
+                    }
+                )
+            }
+        }
+    )
+
+
+    suspend fun deletePlaylist(userId: String, uri: String) = api.clientMutate<PlaylistChanges>(
+        "playlist/v2/user/$userId/rootlist/changes",
+        buildJsonObject {
+            putJsonArray("deltas") {
+                add(
+                    buildJsonObject {
+                        applyOps(3, "rem") {
+                            putJsonArray("items") {
+                                add(buildJsonObject { put("uri", uri) })
+                            }
+                            put("itemsAsKey", true)
+                        }
+                        applyClientInfo()
+                    }
+                )
+            }
+        }
+    )
+
+    private fun JsonObjectBuilder.applyClientInfo() = putJsonObject("info") {
+        putJsonObject("source") {
+            put("client", 5)
+        }
+    }
+
+    suspend fun editPlaylistMetadata(
+        uri: String, name: String, desc: String?
+    ) = api.clientMutate<PlaylistChanges>(
+        "playlist/v2/playlist/$uri/changes",
+        buildJsonObject {
+            putJsonArray("deltas") {
+                add(
+                    buildJsonObject {
+                        putJsonArray("ops") {
+                            add(
+                                buildJsonObject {
+                                    put("kind", 6)
+                                    applyNameDesc(name, desc)
+                                }
+                            )
+                        }
+                        applyClientInfo()
+                    }
+                )
+            }
+        }
+    )
+
+    suspend fun moveItemsInPlaylist(uri: String, toUid: String, fromUid: String?) = api.graphMutate(
+        "moveItemsInPlaylist",
+        "47c69e71df79e3c80e4af7e7a9a727d82565bb20ae20dc820d6bc6f94def482d",
+        buildJsonObject {
+            put("playlistUri", uri)
+            putJsonArray("uids") {
+                add(toUid)
+            }
+            putJsonObject("newPosition") {
+                put("moveType", if (fromUid != null) "BEFORE_UID" else "BOTTOM_OF_PLAYLIST")
+                put("fromUid", fromUid)
+            }
+        }
+    )
+
+    suspend fun removeFromPlaylist(uri: String, vararg uid: String) = api.graphMutate(
+        "removeFromPlaylist",
+        "47c69e71df79e3c80e4af7e7a9a727d82565bb20ae20dc820d6bc6f94def482d",
+        buildJsonObject {
+            put("playlistUri", uri)
+            putJsonArray("uids") {
+                uid.forEach { add(it) }
+            }
+        }
+    )
+
+    suspend fun addToPlaylist(
+        uri: String, fromUid: String?, vararg uris: String
+    ) = api.graphMutate(
+        "addToPlaylist",
+        "47c69e71df79e3c80e4af7e7a9a727d82565bb20ae20dc820d6bc6f94def482d",
+        buildJsonObject {
+            put("playlistUri", uri)
+            putJsonArray("uris") {
+                uris.forEach { add(it) }
+            }
+            putJsonObject("newPosition") {
+                put("moveType", if (fromUid != null) "BEFORE_UID" else "BOTTOM_OF_PLAYLIST")
+                put("fromUid", fromUid)
+            }
+        }
+    )
 }

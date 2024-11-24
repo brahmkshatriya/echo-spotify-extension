@@ -59,6 +59,7 @@ sealed interface Item {
         val images: Images? = null,
         val name: String? = null,
         val ownerV2: OwnerWrapper? = null,
+        val revisionId: String? = null,
         val uri: String? = null,
     ) : Item {
         @Serializable
@@ -273,6 +274,8 @@ sealed interface Item {
     data class TrackWrapper(
         @SerialName("__typename")
         val typename: String? = null,
-        val data: Track? = null
+        val data: Track? = null,
+        @SerialName("_uri")
+        val uri: String? = null
     )
 }

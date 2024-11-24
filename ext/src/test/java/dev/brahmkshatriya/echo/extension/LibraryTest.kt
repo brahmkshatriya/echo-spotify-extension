@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.extension
 
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
+import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem.Companion.toMediaItem
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Shelf
@@ -117,7 +118,7 @@ class LibraryTest {
 
     @Test
     fun testGid() = testIn("GID Test") {
-        val actual = "4eNGmBfayErwCHSKW3F0ek"
+        val actual = "0shcawVbNMznHPKeW9gfmF"
         val gid = Base62.decode(actual)
         println(gid)
         val id = Base62.encode(gid)
@@ -128,7 +129,7 @@ class LibraryTest {
     @Test
     fun testPlaylist() = testIn("Playlist Test") {
         val playlist = extension.loadPlaylist(
-            Playlist("spotify:playlist:6ZBHUwSlPqlvLsw0MKJtLU", "", false)
+            Playlist("spotify:playlist:6yK8Rfoj4WgTFyIowWg0n6", "", false)
         )
         println(playlist)
         val tracks = extension.loadTracks(playlist).loadFirst()
@@ -206,12 +207,60 @@ class LibraryTest {
     }
 
     @Test
-    fun testLibrary() = testIn("Library Test"){
+    fun testLibrary() = testIn("Library Test") {
         val tabs = extension.getLibraryTabs()
-        println(tabs)
-        tabs.forEach { tab ->
-            val feed = extension.getLibraryFeed(tab).loadAll()
-            println("Tab: $tab - ${feed.size}")
+        val feed = extension.getLibraryFeed(tabs.first()).loadAll()
+        val liked =
+            ((feed.first() as Shelf.Item).media as EchoMediaItem.Lists.PlaylistItem).playlist
+        println(liked)
+        val loaded = extension.loadPlaylist(liked)
+        println(loaded)
+        val tracks = extension.loadTracks(loaded).loadAll()
+        println("Tracks: ${tracks.size}")
+    }
+
+    @Test
+    fun editablePlaylist() = testIn("Editable Playlist Test") {
+        val playlists = extension.listEditablePlaylists()
+        playlists.forEach {
+            println(it)
         }
+    }
+
+    @Test
+    fun createPlaylist() = testIn("Create Playlist Test") {
+        val playlist = extension.createPlaylist("Test Playlist", "Test Descriptionc xdxb xf")
+        println(playlist)
+        extension.editPlaylistMetadata(playlist, "bruhduish", null)
+        println(extension.loadPlaylist(playlist))
+        println("Playlists: ${extension.listEditablePlaylists().size}")
+        extension.deletePlaylist(playlist)
+        println("Playlists: ${extension.listEditablePlaylists().size}")
+    }
+
+    @Test
+    fun editPlaylist() = testIn("Edit Playlist Test") {
+        val new = listOf(
+            Track("spotify:track:76I3PmbGZazzNlEwlp1y85", "")
+        )
+        val playlist = Playlist("spotify:playlist:6yK8Rfoj4WgTFyIowWg0n6", "", true)
+        val tracks = extension.loadTracks(playlist).loadAll().toMutableList()
+        extension.moveTrackInPlaylist(playlist, tracks, 0, 1)
+        tracks.add(1, tracks.removeAt(0))
+        extension.removeTracksFromPlaylist(playlist, tracks, listOf(1))
+        tracks.removeAt(1)
+        extension.addTracksToPlaylist(playlist, tracks, tracks.size, new)
+        tracks.addAll(tracks.size, new)
+        tracks.forEach { println(it) }
+    }
+
+    @Test
+    fun likeTrack() = testIn("Like Track Test") {
+        val track = Track("spotify:track:76I3PmbGZazzNlEwlp1y85", "")
+        println(extension.loadTrack(track).isLiked)
+        extension.likeTrack(track, true)
+        println(extension.loadTrack(track).isLiked)
+        extension.likeTrack(track, false)
+        println(extension.loadTrack(track).isLiked)
     }
 }

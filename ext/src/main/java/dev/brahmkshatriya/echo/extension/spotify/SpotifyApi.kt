@@ -86,6 +86,16 @@ class SpotifyApi(
         return Response(json.decode<T>(raw), raw)
     }
 
+    suspend inline fun <reified T> clientMutate(path: String, data: JsonObject): Response<T> {
+        val raw = call(
+            Request.Builder()
+                .url("https://spclient.wg.spotify.com/$path")
+                .post(data.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+        )
+        return Response(json.decode<T>(raw), raw)
+    }
+
     suspend fun call(request: Request): String {
         runCatching { auth.getToken() }.getOrElse {
             if (it is Authentication.Error) onError(it)

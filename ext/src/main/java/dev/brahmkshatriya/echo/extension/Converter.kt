@@ -122,10 +122,10 @@ private fun SectionItem.toCategory(api: Queries): Shelf.Category? {
     return item.toCategory(api)
 }
 
-fun ITrack.toTrack(a: Album? = null): Track? {
-    val album = a ?: albumOfTrack?.toAlbum()
+fun ITrack.toTrack(a: Album? = null, url: String? = null): Track? {
+    val album = albumOfTrack?.toAlbum(name) ?: a
     return Track(
-        id = uri ?: return null,
+        id = uri ?: url ?: return null,
         title = name ?: return null,
         cover = album?.cover,
         artists = artists.toArtists(),
@@ -137,11 +137,13 @@ fun ITrack.toTrack(a: Album? = null): Track? {
 }
 
 fun Item.Playlist.toPlaylist(): Playlist? {
+    val desc = description?.removeHtml()?.ifEmpty { null }
     return Playlist(
         id = uri ?: return null,
         title = name ?: return null,
         isEditable = false,
-        subtitle = description?.removeHtml() ?: "",
+        subtitle = desc,
+        description = desc,
         cover = images?.items?.firstOrNull()?.toImageHolder(),
         authors = listOfNotNull(
             (ownerV2?.data?.toMediaItem() as? EchoMediaItem.Profile.UserItem)?.user
@@ -150,19 +152,29 @@ fun Item.Playlist.toPlaylist(): Playlist? {
     )
 }
 
+fun Item.PseudoPlaylist.toPlaylist(): Playlist? {
+    return Playlist(
+        id = uri ?: return null,
+        title = name ?: return null,
+        isEditable = true,
+        cover = image?.toImageHolder(),
+        tracks = count
+    )
+}
+
 fun Item.Playlist.toRadio(): Radio? {
     return Radio(
         id = uri ?: return null,
         title = name ?: return null,
-        subtitle = description?.removeHtml() ?: "",
+        subtitle = description?.removeHtml(),
         cover = images?.items?.firstOrNull()?.toImageHolder()
     )
 }
 
-fun IAlbum.toAlbum(): Album? {
+fun IAlbum.toAlbum(n: String? = null): Album? {
     return Album(
         id = uri ?: return null,
-        title = name ?: return null,
+        title = name ?: n ?: return null,
         subtitle = date?.year?.toString(),
         artists = artists.toArtists(),
         cover = coverArt?.toImageHolder(),
@@ -251,13 +263,7 @@ fun Item.toMediaItem(): EchoMediaItem? {
             cover = preReleaseContent.coverArt?.toImageHolder()
         ).toMediaItem()
 
-        is Item.PseudoPlaylist -> Playlist(
-            id = uri ?: return null,
-            title = name ?: return null,
-            isEditable = true,
-            cover = image?.toImageHolder(),
-            tracks = count
-        ).toMediaItem()
+        is Item.PseudoPlaylist -> toPlaylist()?.toMediaItem()
 
         is Item.Playlist -> toPlaylist()?.toMediaItem()
 
@@ -355,7 +361,7 @@ fun ItemsItem.toCategory(queries: Queries): Shelf.Category? {
 fun ProfileAttributes.toUser() = User(
     id = data.me.profile.uri!!,
     name = data.me.profile.name!!,
-    cover = data.me.profile.avatar?.sources?.firstOrNull()?.url?.toImageHolder()
+    cover = data.me.profile.avatar?.sources?.lastOrNull()?.url?.toImageHolder()
 )
 
 private val filteredCategory = listOf("PODCASTS", "AUDIOBOOKS")
@@ -591,3 +597,26 @@ fun LibraryV3.Item.toShelf(queries: Queries): Shelf? {
         )
     } else item?.data?.toMediaItem()?.toShelf()
 }
+
+fun editablePlaylists(queries: Queries, folderUri: String? = null): PagedData<Playlist> =
+    paged { offset ->
+        val res = queries.editablePlaylists(
+            offset, folderUri, "spotify:track:3z5lNLYtGC6LmvrxSbCQgd"
+        ).json.data.me.editablePlaylists!!
+        val playlists = res.items.mapNotNull {
+            when (val item = it.item.data) {
+                is Item.PseudoPlaylist -> listOfNotNull(item.toPlaylist())
+                is Item.Playlist -> listOfNotNull(item.toPlaylist())
+                is Item.Folder -> {
+                    val uri = item.uri ?: return@mapNotNull null
+                    editablePlaylists(queries, uri).loadAll()
+                }
+
+                else -> null
+            }
+        }.flatten()
+        println()
+        val page = res.pagingInfo!!
+        val next = page.offset!! + page.limit!!
+        playlists to if (res.totalCount!! > next) next else null
+    }
