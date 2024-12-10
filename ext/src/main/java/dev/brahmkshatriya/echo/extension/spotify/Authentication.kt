@@ -25,7 +25,7 @@ class Authentication(
                 throw json.decode<ErrorMessage>(response).error
             }
         }
-        expiresIn = response.accessTokenExpirationTimestampMs
+        expiresIn = response.accessTokenExpirationTimestampMs - 1800000
         accessToken = response.accessToken
         api.cache.accessToken = accessToken
         api.cache.accessTokenExpiration = expiresIn

@@ -490,7 +490,7 @@ fun Metadata4Track.toTrack(
         val url = it.fileId ?: return@mapNotNull null
         val format = it.format ?: return@mapNotNull null
         if (!format.isWorking(hasPremium)) return@mapNotNull null
-        Streamable.source(
+        Streamable.server(
             id = url,
             quality = format.qualityRank,
             title = format.name.replace('_', ' '),

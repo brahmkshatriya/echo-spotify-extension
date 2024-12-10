@@ -5,14 +5,14 @@ import dev.brahmkshatriya.echo.common.clients.ArtistClient
 import dev.brahmkshatriya.echo.common.clients.ArtistFollowClient
 import dev.brahmkshatriya.echo.common.clients.ExtensionClient
 import dev.brahmkshatriya.echo.common.clients.HomeFeedClient
-import dev.brahmkshatriya.echo.common.clients.LibraryClient
+import dev.brahmkshatriya.echo.common.clients.LibraryFeedClient
 import dev.brahmkshatriya.echo.common.clients.LoginClient
 import dev.brahmkshatriya.echo.common.clients.LyricsClient
 import dev.brahmkshatriya.echo.common.clients.PlaylistClient
 import dev.brahmkshatriya.echo.common.clients.PlaylistEditClient
 import dev.brahmkshatriya.echo.common.clients.RadioClient
 import dev.brahmkshatriya.echo.common.clients.SaveToLibraryClient
-import dev.brahmkshatriya.echo.common.clients.SearchClient
+import dev.brahmkshatriya.echo.common.clients.SearchFeedClient
 import dev.brahmkshatriya.echo.common.clients.ShareClient
 import dev.brahmkshatriya.echo.common.clients.TrackClient
 import dev.brahmkshatriya.echo.common.clients.TrackHideClient
@@ -52,7 +52,7 @@ import kotlinx.coroutines.coroutineScope
 import java.net.HttpCookie
 
 class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
-    SearchClient, HomeFeedClient, LibraryClient, LyricsClient, ShareClient,
+    SearchFeedClient, HomeFeedClient, LibraryFeedClient, LyricsClient, ShareClient,
     TrackClient, TrackLikeClient, TrackHideClient, RadioClient, SaveToLibraryClient,
     AlbumClient, PlaylistClient, ArtistClient, ArtistFollowClient, PlaylistEditClient {
 
@@ -110,8 +110,8 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     }
 
     override suspend fun deleteQuickSearch(item: QuickSearchItem) {}
-    override suspend fun quickSearch(query: String?): List<QuickSearchItem> {
-        if (query.isNullOrBlank()) return emptyList()
+    override suspend fun quickSearch(query: String): List<QuickSearchItem> {
+        if (query.isBlank()) return emptyList()
         val results = queries.searchDesktop(query, 10).json.data.searchV2.topResultsV2?.itemsV2
         return results?.mapNotNull {
             val item = it.item?.toMediaItem() ?: return@mapNotNull null
@@ -124,8 +124,8 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         queries.browseAll().json.data.browseStart.sections.toShelves(queries)
     }
 
-    override fun searchFeed(query: String?, tab: Tab?): PagedData<Shelf> {
-        if (query == null) return getBrowsePage()
+    override fun searchFeed(query: String, tab: Tab?): PagedData<Shelf> {
+        if (query.isBlank()) return getBrowsePage()
         if (tab == null || tab.id == "ALL") return oldSearch ?: getBrowsePage()
         return paged { offset ->
             when (tab.id) {
@@ -155,8 +155,8 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         }
     }
 
-    override suspend fun searchTabs(query: String?): List<Tab> {
-        if (query.isNullOrBlank()) return emptyList()
+    override suspend fun searchTabs(query: String): List<Tab> {
+        if (query.isBlank()) return emptyList()
         val (shelves, tabs) = queries.searchDesktop(query).json.data.searchV2
             .toShelvesAndTabs(queries)
         oldSearch = shelves
@@ -177,9 +177,9 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         list + first + other
     }
 
-    override suspend fun getStreamableMedia(streamable: Streamable): Streamable.Media {
+    override suspend fun loadStreamableMedia(streamable: Streamable): Streamable.Media {
         return when (streamable.type) {
-            Streamable.MediaType.Source -> {
+            Streamable.MediaType.Server -> {
                 api.token ?: throw ClientException.LoginRequired()
                 val accessToken = api.auth.getToken()
                 val url = queries.storageResolve(streamable.id).json.cdnUrl.first()
@@ -470,14 +470,10 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         return isSaved ?: false
     }
 
-    override suspend fun removeFromLibrary(mediaItem: EchoMediaItem) {
+    override suspend fun saveToLibrary(mediaItem: EchoMediaItem, save: Boolean) {
         if (api.token == null) throw ClientException.LoginRequired()
-        queries.removeFromLibrary(mediaItem.id)
-    }
-
-    override suspend fun saveToLibrary(mediaItem: EchoMediaItem) {
-        if (api.token == null) throw ClientException.LoginRequired()
-        println(queries.addToLibrary(mediaItem.id))
+        if(save) queries.addToLibrary(mediaItem.id)
+        else queries.removeFromLibrary(mediaItem.id)
     }
 
     override suspend fun likeTrack(track: Track, isLiked: Boolean) {
@@ -489,36 +485,18 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         TODO("Find a way to hide tracks, cause it's not available on web.")
     }
 
-    override suspend fun followArtist(artist: Artist): Boolean {
+    override suspend fun followArtist(artist: Artist, follow: Boolean) {
         if (api.token == null) throw ClientException.LoginRequired()
-        return when (val type = artist.id.substringAfter(":").substringBefore(":")) {
+        when (val type = artist.id.substringAfter(":").substringBefore(":")) {
             "artist" -> {
-                queries.addToLibrary(artist.id)
-                true
+                if(follow) queries.addToLibrary(artist.id)
+                else queries.removeFromLibrary(artist.id)
             }
 
             "user" -> {
                 val id = artist.id.substringAfter("spotify:user:")
-                queries.followUsers(id)
-                true
-            }
-
-            else -> throw IllegalArgumentException("Unsupported artist type: $type")
-        }
-    }
-
-    override suspend fun unfollowArtist(artist: Artist): Boolean {
-        if (api.token == null) throw ClientException.LoginRequired()
-        return when (val type = artist.id.substringAfter(":").substringBefore(":")) {
-            "artist" -> {
-                queries.removeFromLibrary(artist.id)
-                true
-            }
-
-            "user" -> {
-                val id = artist.id.substringAfter("spotify:user:")
-                queries.unfollowUsers(id)
-                true
+                if(follow) queries.followUsers(id)
+                else queries.unfollowUsers(id)
             }
 
             else -> throw IllegalArgumentException("Unsupported artist type: $type")
@@ -546,17 +524,17 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         }
     }
 
-    override suspend fun loadArtist(small: Artist): Artist {
-        when (val type = small.id.substringAfter(":").substringBefore(":")) {
+    override suspend fun loadArtist(artist: Artist): Artist {
+        when (val type = artist.id.substringAfter(":").substringBefore(":")) {
             "artist" -> {
-                val res = queries.queryArtistOverview(small.id)
+                val res = queries.queryArtistOverview(artist.id)
                 return res.json.data.artistUnion.toArtist()!!.copy(
                     extras = mapOf("raw" to res.raw)
                 )
             }
 
             "user" -> {
-                val id = small.id.substringAfter("spotify:user:")
+                val id = artist.id.substringAfter("spotify:user:")
                 val profile = queries.profileWithPlaylists(id)
                 return profile.json.toArtist()!!.copy(
                     extras = mapOf("raw" to profile.raw)
