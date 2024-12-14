@@ -175,6 +175,21 @@ sealed interface Item {
     ) : Item
 
     @Serializable
+    @SerialName("Audiobook")
+    data class Audiobook(
+        @SerialName("__typename")
+        override val typename: String,
+
+        val authors: List<Profile>? = null,
+        val coverArt: Artwork? = null,
+        val description: String? = null,
+        val audiobookDuration: Duration? = null,
+        val name: String? = null,
+        val publishDate: Date? = null,
+        val uri: String? = null,
+    ) : Item
+
+    @Serializable
     @SerialName("Track")
     data class Track(
         @SerialName("__typename")
@@ -261,6 +276,7 @@ sealed interface Item {
         @SerialName("__typename")
         val typename: String? = null,
         val data: Item? = null,
+        val uri: String? = null,
     )
 
     @Serializable

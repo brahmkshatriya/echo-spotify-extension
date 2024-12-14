@@ -46,6 +46,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import kotlin.math.ceil
 
 fun Settings.toCache(): Cache {
     return object : Cache {
@@ -63,7 +64,6 @@ fun Settings.toCache(): Cache {
 
     }
 }
-
 
 fun List<HomeFeed.Chip>.toTabs() = map {
     Tab(it.id!!, it.label?.transformedLabel!!)
@@ -249,8 +249,19 @@ fun IArtist.toShelves(queries: Queries) = listOfNotNull(
     }
 )
 
+val likedPlaylist = Playlist(
+    "spotify:collection:tracks",
+    "Liked Songs",
+    true,
+    "https://misc.scdn.co/liked-songs/liked-songs-300.png".toImageHolder()
+)
 
-fun Wrapper.toMediaItem() = data?.toMediaItem()
+fun Wrapper.toMediaItem() = when (uri) {
+    "spotify:user:@:collection" -> likedPlaylist.toMediaItem()
+
+    else -> data?.toMediaItem()
+}
+
 fun Item.toMediaItem(): EchoMediaItem? {
     return when (this) {
         is Item.Album -> toAlbum()?.toMediaItem()
@@ -281,7 +292,16 @@ fun Item.toMediaItem(): EchoMediaItem? {
             ),
             isExplicit = contentRating?.label == Label.EXPLICIT,
             duration = duration?.totalMilliseconds,
-            releaseDate = releaseDate?.isoString,
+            releaseDate = releaseDate?.isoString?.toTimeString(),
+        ).toMediaItem()
+
+        is Item.Audiobook -> Track(
+            id = uri ?: return null,
+            title = name ?: return null,
+            cover = coverArt?.toImageHolder(),
+            description = description?.removeHtml(),
+            subtitle = authors?.joinToString(", ") { it.name ?: "" },
+            releaseDate = publishDate?.isoString?.toTimeString(),
         ).toMediaItem()
 
         is Item.Podcast -> Artist(
@@ -308,10 +328,10 @@ fun Item.toMediaItem(): EchoMediaItem? {
     }
 }
 
-private fun String.toTimeString(timezone: String?): String? {
+private fun String.toTimeString(timezone: String? = null): String {
     val locale = Locale.ENGLISH
     val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", locale)
-    formatter.timeZone = TimeZone.getTimeZone(timezone ?: return null)
+    formatter.timeZone = TimeZone.getTimeZone(timezone ?: "UTC")
     val targetTime = formatter.parse(this)
     val currentTime = Date()
     val duration = targetTime.time - currentTime.time
@@ -333,8 +353,11 @@ private fun String?.removeHtml(): String? {
 }
 
 private fun Artwork.toImageHolder(): ImageHolder? {
-    return this.sources.firstOrNull()?.url?.toImageHolder()
+    return this.sources.middleOrNull()?.url?.toImageHolder()
 }
+
+private fun <T> List<T>.middleOrNull() = getOrNull(size.ceilDiv(2)) ?: lastOrNull()
+private fun Int.ceilDiv(other: Int) = ceil(this.toDouble() / other).toInt()
 
 fun <T : Any> paged(
     load: suspend (offset: Int) -> Pair<List<T>, Long?>
@@ -452,6 +475,7 @@ private fun List<SearchDesktop.TrackWrapperWrapper>?.toTrackShelf(title: String)
 
 fun Canvas.toStreamable(): Streamable? {
     val canvas = data?.trackUnion?.canvas ?: return null
+    if (!canvas.type.orEmpty().startsWith("VIDEO")) return null
     val url = canvas.url ?: return null
     return Streamable.background(
         id = url,

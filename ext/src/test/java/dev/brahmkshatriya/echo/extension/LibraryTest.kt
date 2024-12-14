@@ -73,8 +73,8 @@ class LibraryTest {
 
     @Test
     fun testSearchEmpty() = testIn("Testing Empty Search") {
-        val tab = extension.searchTabs(null).firstOrNull()
-        val feed = extension.searchFeed(null, tab)
+        val tab = extension.searchTabs("").firstOrNull()
+        val feed = extension.searchFeed("", tab)
         val shelves = feed.loadAll()
         val shelf = shelves.first() as Shelf.Lists.Categories
         val load = shelf.list.first().items!!.loadFirst()
@@ -98,13 +98,13 @@ class LibraryTest {
 
     @Test
     fun getTrack() = testIn("Get Track") {
-        val track = extension.loadTrack(Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", ""))
+        val track = extension.loadTrack(Track("spotify:track:0TPF2GBCH08gLC40qvDjvD", ""))
         println(track)
         val lyrics = extension.searchTrackLyrics("", track).loadAll()
         println(lyrics)
-        track.sources.forEach { streamable ->
+        track.servers.forEach { streamable ->
             println(streamable)
-            val media = extension.getStreamableMedia(streamable)
+            val media = extension.loadStreamableMedia(streamable, false)
             println(media)
         }
     }
@@ -129,14 +129,14 @@ class LibraryTest {
     @Test
     fun testPlaylist() = testIn("Playlist Test") {
         val playlist = extension.loadPlaylist(
-            Playlist("spotify:playlist:6yK8Rfoj4WgTFyIowWg0n6", "", false)
+            Playlist("spotify:playlist:3uTkolMJaNbwJBdWULPuPi", "", false)
         )
         println(playlist)
-        val tracks = extension.loadTracks(playlist).loadFirst()
+        val tracks = extension.loadTracks(playlist).loadAll()
         println("Tracks: ${tracks.size}")
-        val shelves = extension.getShelves(playlist).loadFirst()
-        println("Shelves: ${shelves.size}")
-        shelves.forEach { it.print() }
+//        val shelves = extension.getShelves(playlist).loadFirst()
+//        println("Shelves: ${shelves.size}")
+//        shelves.forEach { it.print() }
     }
 
     @Test
@@ -197,13 +197,13 @@ class LibraryTest {
     @Test
     fun testSaveItem() = testIn("Save Item Test") {
         val track = Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", "").toMediaItem()
-        extension.saveToLibrary(track)
+        extension.saveToLibrary(track, true)
     }
 
     @Test
     fun testRemoveItem() = testIn("Remove Item Test") {
         val track = Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", "").toMediaItem()
-        extension.removeFromLibrary(track)
+        extension.saveToLibrary(track, false)
     }
 
     @Test

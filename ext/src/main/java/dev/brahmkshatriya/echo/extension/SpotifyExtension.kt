@@ -77,7 +77,8 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     override val loginWebViewInitialUrl =
         "https://accounts.spotify.com/en/login".toRequest(mapOf(userAgent))
 
-    override val loginWebViewStopUrlRegex = "https://accounts\\.spotify\\.com/en/status".toRegex()
+    override val loginWebViewStopUrlRegex =
+        Regex("(https://accounts\\.spotify\\.com/en/status)|(https://open\\.spotify\\.com)")
 
     override suspend fun onLoginWebviewStop(url: String, data: String): List<User> {
         val parsed = data.split(";").mapNotNull {
@@ -109,9 +110,24 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         return product != AccountAttributes.Product.FREE
     }
 
-    override suspend fun deleteQuickSearch(item: QuickSearchItem) {}
+    override suspend fun deleteQuickSearch(item: QuickSearchItem) {
+        val history = getHistory().toMutableList()
+        history.remove(item.title)
+        setting.putString("search_history", history.joinToString(","))
+    }
+
+    private fun getHistory() = setting.getString("search_history")
+        ?.split(",")?.distinct()?.take(5)
+        ?: emptyList()
+
+    private fun saveInHistory(query: String) {
+        val history = getHistory().toMutableList()
+        history.add(0, query)
+        setting.putString("search_history", history.joinToString(","))
+    }
+
     override suspend fun quickSearch(query: String): List<QuickSearchItem> {
-        if (query.isBlank()) return emptyList()
+        if (query.isBlank()) return getHistory().map { QuickSearchItem.Query(it, true) }
         val results = queries.searchDesktop(query, 10).json.data.searchV2.topResultsV2?.itemsV2
         return results?.mapNotNull {
             val item = it.item?.toMediaItem() ?: return@mapNotNull null
@@ -126,6 +142,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
 
     override fun searchFeed(query: String, tab: Tab?): PagedData<Shelf> {
         if (query.isBlank()) return getBrowsePage()
+        saveInHistory(query)
         if (tab == null || tab.id == "ALL") return oldSearch ?: getBrowsePage()
         return paged { offset ->
             when (tab.id) {
@@ -177,7 +194,9 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         list + first + other
     }
 
-    override suspend fun loadStreamableMedia(streamable: Streamable): Streamable.Media {
+    override suspend fun loadStreamableMedia(
+        streamable: Streamable, isDownload: Boolean
+    ): Streamable.Media {
         return when (streamable.type) {
             Streamable.MediaType.Server -> {
                 api.token ?: throw ClientException.LoginRequired()
@@ -210,7 +229,10 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         queries.metadata4Track(id).json.toTrack(
             hasPremium,
             canvas.await()
-        ).copy(isLiked = isLiked.await())
+        ).copy(
+            isExplicit = track.isExplicit,
+            isLiked = isLiked.await()
+        )
     }
 
     private suspend fun createRadio(id: String): Radio {
@@ -238,17 +260,24 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
                 )
             }
 
-            "collection" -> playlist.copy(
-                cover = "https://misc.scdn.co/liked-songs/liked-songs-300.png".toImageHolder()
-            )
+            "collection" -> {
+                val totalSongs = if (playlist.tracks == null)
+                    queries.fetchLibraryTracks(0).json.data.me.library.tracks.totalCount
+                else playlist.tracks
+
+                likedPlaylist.copy(
+                    cover = "https://misc.scdn.co/liked-songs/liked-songs-640.jpg".toImageHolder(),
+                    tracks = totalSongs?.toInt()
+                )
+            }
 
             else -> throw ClientException.NotSupported("Unsupported playlist type: $type")
         }
 
     private fun loadPlaylistTracks(id: String, skipFirst: Boolean = false) = paged { offset ->
         val content = queries.fetchPlaylistContent(id, offset).json.data.playlistV2.content!!
-        val tracks = content.items!!.map {
-            val track = it.itemV2?.data?.toTrack()!!
+        val tracks = content.items!!.mapNotNull {
+            val track = it.itemV2?.data?.toTrack() ?: return@mapNotNull null
             if (it.uid != null) track.copy(extras = mapOf("uid" to it.uid)) else track
         }.let {
             if (skipFirst && offset == 0) it.drop(1) else it
@@ -409,7 +438,9 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     }
 
     override fun getHomeFeed(tab: Tab?) = PagedData.Single {
-        val home = if (tab == null || tab.id == "") queries.home(null).json.data?.home!!
+        val home = if (tab == null || tab.id == "") queries.home(null)
+            .also { println(it.raw) }
+            .json.data?.home!!
         else queries.homeSubfeed(tab.id).json.data?.home!!
         home.run {
             sectionContainer?.sections?.toShelves(
@@ -472,7 +503,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
 
     override suspend fun saveToLibrary(mediaItem: EchoMediaItem, save: Boolean) {
         if (api.token == null) throw ClientException.LoginRequired()
-        if(save) queries.addToLibrary(mediaItem.id)
+        if (save) queries.addToLibrary(mediaItem.id)
         else queries.removeFromLibrary(mediaItem.id)
     }
 
@@ -489,13 +520,13 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         if (api.token == null) throw ClientException.LoginRequired()
         when (val type = artist.id.substringAfter(":").substringBefore(":")) {
             "artist" -> {
-                if(follow) queries.addToLibrary(artist.id)
+                if (follow) queries.addToLibrary(artist.id)
                 else queries.removeFromLibrary(artist.id)
             }
 
             "user" -> {
                 val id = artist.id.substringAfter("spotify:user:")
-                if(follow) queries.followUsers(id)
+                if (follow) queries.followUsers(id)
                 else queries.unfollowUsers(id)
             }
 

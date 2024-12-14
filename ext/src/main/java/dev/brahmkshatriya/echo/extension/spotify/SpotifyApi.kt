@@ -44,18 +44,25 @@ class SpotifyApi(
         val raw: String
     )
 
+    fun graphRequest(
+        operationName: String,
+        persistedQuery: String,
+        variables: JsonObject = buildJsonObject { },
+    ) = run {
+        val builder = StringBuilder("https://api-partner.spotify.com/pathfinder/v1/query")
+            .append("?operationName=${operationName}")
+            .append("&variables=${urlEncode(variables)}")
+            .append("&extensions=${urlEncode((extensions(persistedQuery)))}")
+        Request.Builder().url(builder.toString())
+    }
+
     suspend inline fun <reified T> graphQuery(
         operationName: String,
         persistedQuery: String,
         variables: JsonObject = buildJsonObject { },
         print: Boolean = false
     ): Response<T> {
-        val builder = StringBuilder("https://api-partner.spotify.com/pathfinder/v1/query")
-            .append("?operationName=${operationName}")
-            .append("&variables=${urlEncode(variables)}")
-            .append("&extensions=${urlEncode((extensions(persistedQuery)))}")
-        val request = Request.Builder().url(builder.toString()).build()
-        val raw = call(request)
+        val raw = call(graphRequest(operationName, persistedQuery, variables).build())
         if (print) println(raw)
         return Response(json.decode<T>(raw), raw)
     }
@@ -107,10 +114,9 @@ class SpotifyApi(
         }
     }
 
-    fun urlEncode(data: JsonObject) = urlEncode(data.toString())
     fun urlEncode(data: String): String = URLEncoder.encode(data, "UTF-8")
-
-    fun extensions(persistedQuery: String): JsonObject {
+    private fun urlEncode(data: JsonObject) = urlEncode(data.toString())
+    private fun extensions(persistedQuery: String): JsonObject {
         return buildJsonObject {
             putJsonObject("persistedQuery") {
                 put("version", 1)
@@ -119,10 +125,10 @@ class SpotifyApi(
         }
     }
 
-    suspend fun callGetBody(request: Request) = run {
+    suspend fun callGetBody(request: Request, ignore: Boolean = false) = run {
         val res = client.newCall(request).await()
-        if (res.commonIsSuccessful) res.body.string()
-        else throw IOException("Failed to call ${request.url}: ${res.code}")
+        if (ignore || res.commonIsSuccessful) res.body.string()
+        else throw IOException("${res.code}: Failed to call - ${request.url}")
     }
 
     companion object {
