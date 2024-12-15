@@ -1,9 +1,10 @@
-import java.io.ByteArrayOutputStream
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import java.io.ByteArrayOutputStream
 
 plugins {
     id("java-library")
     id("org.jetbrains.kotlin.jvm")
+    id("maven-publish")
     kotlin("plugin.serialization") version "1.9.22"
     id("com.gradleup.shadow") version "8.3.0"
 }
@@ -46,6 +47,18 @@ val gitHash = execute("git", "rev-parse", "HEAD").take(7)
 val gitCount = execute("git", "rev-list", "--count", "HEAD").toInt()
 val verCode = gitCount
 val verName = gitHash
+
+publishing {
+    publications {
+        create<MavenPublication>("mavenJava") {
+            groupId = "dev.brahmkshatriya.echo.extension"
+            artifactId = extId
+            version = verName
+
+            from(components["java"])
+        }
+    }
+}
 
 tasks {
     val shadowJar by getting(ShadowJar::class) {
