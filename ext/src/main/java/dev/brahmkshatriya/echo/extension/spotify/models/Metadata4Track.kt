@@ -22,6 +22,7 @@ data class Metadata4Track(
 
     val file: List<File>? = null,
     val preview: List<File>? = null,
+    val alternative: List<Alternative>? = null,
 
     @SerialName("earliest_live_timestamp")
     val earliestLiveTimestamp: Long? = null,
@@ -109,6 +110,13 @@ data class Metadata4Track(
     data class ExternalId(
         val type: String? = null,
         val id: String? = null
+    )
+
+    @Serializable
+    data class Alternative(
+        val gid: String? = null,
+        val file: List<File>? = null,
+        val preview: List<File>? = null
     )
 
     @Serializable

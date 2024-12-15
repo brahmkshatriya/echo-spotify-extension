@@ -510,7 +510,7 @@ fun Metadata4Track.toTrack(
 ): Track {
     val id = canonicalUri!!
     val title = name!!
-    val streamables = file!!.mapNotNull {
+    val streamables = (file ?: alternative?.firstOrNull()?.file)!!.mapNotNull {
         val url = it.fileId ?: return@mapNotNull null
         val format = it.format ?: return@mapNotNull null
         if (!format.isWorking(hasPremium)) return@mapNotNull null
