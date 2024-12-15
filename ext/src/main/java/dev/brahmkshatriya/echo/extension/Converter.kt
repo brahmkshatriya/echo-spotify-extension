@@ -353,7 +353,7 @@ private fun String?.removeHtml(): String? {
 }
 
 private fun Artwork.toImageHolder(): ImageHolder? {
-    return this.sources.middleOrNull()?.url?.toImageHolder()
+    return this.sources.sortedBy { it.height }.middleOrNull()?.url?.toImageHolder()
 }
 
 private fun <T> List<T>.middleOrNull() = getOrNull(size.ceilDiv(2)) ?: lastOrNull()
