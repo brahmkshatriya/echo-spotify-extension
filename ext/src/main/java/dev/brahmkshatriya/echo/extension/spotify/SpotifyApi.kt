@@ -10,6 +10,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.internal.closeQuietly
 import okhttp3.internal.commonIsSuccessful
 import java.net.URLEncoder
 
@@ -27,15 +28,16 @@ class SpotifyApi(
 
     private val client = OkHttpClient.Builder()
         .addInterceptor { chain ->
+            val request = chain.request()
             val builder = chain.request().newBuilder()
             builder.addHeader(userAgent.first, userAgent.second)
             builder.addHeader("Accept", "application/json")
             builder.addHeader("App-Platform", "WebPlayer")
             auth.accessToken?.let {
-                builder.addHeader("Authorization", "Bearer $it")
+                if (request.headers["Authorization"] == null)
+                    builder.addHeader("Authorization", "Bearer $it")
             }
-            val request = builder.build()
-            chain.proceed(request)
+            chain.proceed(builder.build())
         }
         .build()
 
@@ -125,11 +127,17 @@ class SpotifyApi(
         }
     }
 
-    suspend fun callGetBody(request: Request, ignore: Boolean = false) = run {
-        val res = client.newCall(request).await()
-        if (ignore || res.commonIsSuccessful) res.body.string()
-        else throw IOException("${res.code}: Failed to call - ${request.url}")
-    }
+    suspend fun callGetBody(request: Request, ignore: Boolean = false, auth: String? = null) =
+        run {
+            val req = if (auth == null) request
+            else request.newBuilder().addHeader("Authorization", "Bearer $auth").build()
+            val res = client.newCall(req).await()
+            if (ignore || res.commonIsSuccessful) res.body.string()
+            else {
+                res.closeQuietly()
+                throw IOException("${res.code}: Failed to call - ${req.url}")
+            }
+        }
 
     companion object {
         val userAgent =

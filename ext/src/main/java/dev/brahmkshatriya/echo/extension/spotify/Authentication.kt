@@ -49,14 +49,9 @@ class Authentication(
         }
     ).build()
 
-    private suspend fun isTokenWorking(token: String?): Boolean {
-        val oldToken = accessToken
-        accessToken = token
-        return runCatching {
-            api.callGetBody(tokenCheckRequest)
-            accessToken = oldToken
-        }.isSuccess
-    }
+    private suspend fun isTokenWorking(token: String?) =
+        runCatching { api.callGetBody(tokenCheckRequest, false, token) }.isSuccess
+
 
     @Serializable
     data class TokenResponse(

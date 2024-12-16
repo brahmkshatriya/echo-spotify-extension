@@ -50,7 +50,7 @@ android {
             put("type", "dev.brahmkshatriya.echo.${extType}")
             put("id", extId)
             put("class_path", "dev.brahmkshatriya.echo.extension.${extClass}")
-            put("version", verName)
+            put("version", "v$verName")
             put("version_code", verCode.toString())
             put("icon_url", extIconUrl ?: "")
             put("app_name", "Echo : $extName Extension")
