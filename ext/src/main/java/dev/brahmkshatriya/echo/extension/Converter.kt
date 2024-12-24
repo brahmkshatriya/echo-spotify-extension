@@ -109,10 +109,8 @@ fun Sections.toShelves(
             Sections.Typename.HomeFeedBaselineSectionData -> item.sectionItems?.items
                 ?.firstOrNull()?.content?.data?.toMediaItem()?.toShelf()
 
-            Sections.Typename.BrowseUnsupportedSectionData -> {
-                println(item)
-                null
-            }
+            Sections.Typename.BrowseUnsupportedSectionData -> null
+            Sections.Typename.HomeOnboardingSectionDataV2 -> null
         }
     }!!
 }
@@ -510,7 +508,7 @@ fun Metadata4Track.toTrack(
 ): Track {
     val id = canonicalUri!!
     val title = name!!
-    val streamables = (file ?: alternative?.firstOrNull()?.file)!!.mapNotNull {
+    val streamables = (file ?: alternative?.firstOrNull()?.file).orEmpty().mapNotNull {
         val url = it.fileId ?: return@mapNotNull null
         val format = it.format ?: return@mapNotNull null
         if (!format.isWorking(hasPremium)) return@mapNotNull null

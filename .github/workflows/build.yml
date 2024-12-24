@@ -26,7 +26,7 @@ jobs:
         run: |
           echo -e "## ${{ env.NAME }}\n${{ github.event.head_commit.message }}" > commit.txt
           version=$( echo ${{ github.event.head_commit.id }} | cut -c1-7 )
-          echo "VERSION=$version" >> $GITHUB_ENV
+          echo "VERSION=v$version" >> $GITHUB_ENV
           echo "APP_PATH=app/build/${{ env.TAG }}-$version.eapk" >> $GITHUB_ENV
           echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > $GITHUB_WORKSPACE/signing-key.jks
           chmod +x ./gradlew
@@ -50,7 +50,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           make_latest: true
-          tag_name: v${{ env.VERSION }}
+          tag_name: ${{ env.VERSION }}
           body_path: commit.txt
           name: ${{ env.VERSION }}
           files: ${{ env.APP_PATH }}
