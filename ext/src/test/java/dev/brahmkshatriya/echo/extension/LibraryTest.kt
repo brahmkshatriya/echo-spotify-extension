@@ -263,4 +263,11 @@ class LibraryTest {
         extension.likeTrack(track, false)
         println(extension.loadTrack(track).isLiked)
     }
+
+    @Test
+    fun testSongChange() = testIn("Testing Song Change") {
+        val track = Track("spotify:track:5h2SrRiHKiONIX3TkYOQII", "")
+        val media = extension.loadTrack(track)
+        println(media)
+    }
 }

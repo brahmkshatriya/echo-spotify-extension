@@ -1,6 +1,8 @@
 package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.io.IOException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -15,9 +17,9 @@ import okhttp3.internal.commonIsSuccessful
 import java.net.URLEncoder
 
 class SpotifyApi(
-    val cache: Cache,
     val onError: SpotifyApi.(Authentication.Error) -> Unit
 ) {
+    private val authMutex = Mutex()
     val auth = Authentication(this)
     var token: String? = null
         set(value) {
@@ -106,7 +108,7 @@ class SpotifyApi(
     }
 
     suspend fun call(request: Request): String {
-        runCatching { auth.getToken() }.getOrElse {
+        runCatching { authMutex.withLock { auth.getToken() } }.getOrElse {
             if (it is Authentication.Error) onError(it)
             throw it
         }

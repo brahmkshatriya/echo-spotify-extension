@@ -66,7 +66,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     }
 
     private val api by lazy {
-        SpotifyApi(setting.toCache()) {
+        SpotifyApi {
             val token = token
             if (it.code == 401 && token != null) throw ClientException.Unauthorized(token)
             else throw it
@@ -209,7 +209,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
                     true
                 )
                 Streamable.Source.Http(
-                    request = "$url&$time".toRequest(),
+                    request = url.toRequest(),
                     decryption = decryption,
                 ).toMedia()
             }
@@ -438,9 +438,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     }
 
     override fun getHomeFeed(tab: Tab?) = PagedData.Single {
-        val home = if (tab == null || tab.id == "") queries.home(null)
-            .also { println(it.raw) }
-            .json.data?.home!!
+        val home = if (tab == null || tab.id == "") queries.home(null).json.data?.home!!
         else queries.homeSubfeed(tab.id).json.data?.home!!
         home.run {
             sectionContainer?.sections?.toShelves(

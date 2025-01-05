@@ -15,9 +15,7 @@ import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
-import dev.brahmkshatriya.echo.common.settings.Settings
 import dev.brahmkshatriya.echo.extension.spotify.Base62
-import dev.brahmkshatriya.echo.extension.spotify.Cache
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.models.Albums
 import dev.brahmkshatriya.echo.extension.spotify.models.Artists
@@ -47,23 +45,6 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.ceil
-
-fun Settings.toCache(): Cache {
-    return object : Cache {
-        override var accessToken: String?
-            get() = getString("accessToken")
-            set(value) {
-                putString("accessToken", value)
-            }
-
-        override var accessTokenExpiration: Long?
-            get() = getString("accessTokenExpiration")?.toLongOrNull()
-            set(value) {
-                putString("accessTokenExpiration", value.toString())
-            }
-
-    }
-}
 
 fun List<HomeFeed.Chip>.toTabs() = map {
     Tab(it.id!!, it.label?.transformedLabel!!)
@@ -506,7 +487,7 @@ fun Metadata4Track.toTrack(
     hasPremium: Boolean,
     canvas: Streamable?
 ): Track {
-    val id = canonicalUri!!
+    val id = "spotify:track:${Base62.encode(gid!!)}"
     val title = name!!
     val streamables = (file ?: alternative?.firstOrNull()?.file).orEmpty().mapNotNull {
         val url = it.fileId ?: return@mapNotNull null
@@ -637,7 +618,6 @@ fun editablePlaylists(queries: Queries, folderUri: String? = null): PagedData<Pl
                 else -> null
             }
         }.flatten()
-        println()
         val page = res.pagingInfo!!
         val next = page.offset!! + page.limit!!
         playlists to if (res.totalCount!! > next) next else null

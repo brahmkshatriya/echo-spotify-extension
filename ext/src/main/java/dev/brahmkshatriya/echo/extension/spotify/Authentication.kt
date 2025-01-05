@@ -1,21 +1,14 @@
 package dev.brahmkshatriya.echo.extension.spotify
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.putJsonArray
 import okhttp3.Request
 
 class Authentication(
     private val api: SpotifyApi
 ) {
     var accessToken: String? = null
+    private var tokenExpiration: Long = 0
     private suspend fun createAccessToken(): String {
-        val token = api.cache.accessToken
-        if (accessToken == null && token != null && isTokenWorking(token)) {
-            accessToken = token
-            return token
-        }
         val req = Request.Builder()
             .url("https://open.spotify.com/get_access_token?reason=transport&productType=web-player")
         if (api.token != null) req.header("Cookie", "sp_dc=${api.token}")
@@ -26,31 +19,22 @@ class Authentication(
             }
         }
         accessToken = response.accessToken
-        api.cache.accessToken = accessToken
+        tokenExpiration = response.accessTokenExpirationTimestampMs - 5 * 60 * 1000
         return response.accessToken
     }
 
     suspend fun getToken() =
-        if (accessToken == null || !isTokenWorking(accessToken)) createAccessToken()
+        if (accessToken == null || !isTokenWorking(tokenExpiration)) createAccessToken()
         else accessToken!!
 
     fun clearToken() {
         accessToken = null
-        api.cache.accessToken = null
+        tokenExpiration = 0
     }
 
-    private val tokenCheckRequest = api.graphRequest(
-        "areEntitiesInLibrary",
-        "6ec3f767111e1f88a68058560f961161679d2cd4805ff3b8cb4b25c83ccbd6e0",
-        buildJsonObject {
-            putJsonArray("uris") {
-                add("spotify:track:3z5lNLYtGC6LmvrxSbCQgd")
-            }
-        }
-    ).build()
-
-    private suspend fun isTokenWorking(token: String?) =
-        runCatching { api.callGetBody(tokenCheckRequest, false, token) }.isSuccess
+    private fun isTokenWorking(expiry: Long): Boolean {
+        return System.currentTimeMillis() < expiry
+    }
 
 
     @Serializable
