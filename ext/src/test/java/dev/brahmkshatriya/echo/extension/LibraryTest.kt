@@ -17,6 +17,8 @@ import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert
 import org.junit.Before
@@ -139,17 +141,19 @@ class LibraryTest {
 //        shelves.forEach { it.print() }
     }
 
+    val json = Json { prettyPrint = true }
+
     @Test
     fun testAlbum() = testIn("Album Test") {
         val album = extension.loadAlbum(
-            Album("spotify:album:6a6wiQNPcQMV8K17HDKtrC", "")
+            Album("spotify:album:7DVnTw8oQn2p2dD99Zps4i", "")
         )
-        println(album)
-        val tracks = extension.loadTracks(album).loadFirst()
-        println("Tracks: ${tracks.size}")
-        val shelves = extension.getShelves(album).loadFirst()
-        println("Shelves: ${shelves.size}")
-        shelves.forEach { it.print() }
+        println(json.encodeToString(album))
+//        val tracks = extension.loadTracks(album).loadFirst()
+//        println("Tracks: ${tracks.size}")
+//        val shelves = extension.getShelves(album).loadFirst()
+//        println("Shelves: ${shelves.size}")
+//        shelves.forEach { it.print() }
     }
 
     @Test

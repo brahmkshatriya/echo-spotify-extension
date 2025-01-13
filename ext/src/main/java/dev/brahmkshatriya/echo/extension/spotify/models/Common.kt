@@ -291,7 +291,7 @@ data class CardRepresentation(
 data class Date(
     val isoString: String? = null,
     val precision: String? = null,
-    val year: Long? = null
+    val year: Int? = null
 )
 
 @Serializable

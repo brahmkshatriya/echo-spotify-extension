@@ -27,7 +27,7 @@ class Authentication(
         if (accessToken == null || !isTokenWorking(tokenExpiration)) createAccessToken()
         else accessToken!!
 
-    fun clearToken() {
+    fun clear() {
         accessToken = null
         tokenExpiration = 0
     }

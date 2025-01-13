@@ -85,9 +85,9 @@ data class Metadata4Track(
 
     @Serializable
     data class Date(
-        val year: Long? = null,
-        val month: Long? = null,
-        val day: Long? = null
+        val year: Int? = null,
+        val month: Int? = null,
+        val day: Int? = null
     )
 
     @Serializable

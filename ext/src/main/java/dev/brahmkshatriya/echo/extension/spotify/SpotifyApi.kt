@@ -19,13 +19,17 @@ import java.net.URLEncoder
 class SpotifyApi(
     val onError: SpotifyApi.(Authentication.Error) -> Unit
 ) {
+
+    val token get() = _token
+
     private val authMutex = Mutex()
-    val auth = Authentication(this)
-    var token: String? = null
-        set(value) {
-            field = value
-            auth.clearToken()
-        }
+    private val auth = Authentication(this)
+    private var _token: String? = null
+    suspend fun setToken(token: String?) {
+        _token = token
+        authMutex.withLock { auth.clear() }
+    }
+
     val json = Json()
 
     private val client = OkHttpClient.Builder()
@@ -140,6 +144,10 @@ class SpotifyApi(
                 throw IOException("${res.code}: Failed to call - ${req.url}")
             }
         }
+
+    suspend fun getAccessToken(): String {
+        return authMutex.withLock { auth.getToken() }
+    }
 
     companion object {
         val userAgent =

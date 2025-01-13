@@ -85,13 +85,13 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
             if (it.isBlank()) null else HttpCookie.parse(it).firstOrNull()
         }
         val token = parsed.find { it.name == "sp_dc" } ?: throw Exception("Token not found")
-        api.token = token.value
+        api.setToken(token.value)
         val user = getCurrentUser()!!.copy(id = token.value)
         return listOf(user)
     }
 
     override suspend fun onSetLoginUser(user: User?) {
-        api.token = user?.id
+        api.setToken(user?.id)
         this.user = null
         this.product = null
     }
@@ -200,7 +200,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         return when (streamable.type) {
             Streamable.MediaType.Server -> {
                 api.token ?: throw ClientException.LoginRequired()
-                val accessToken = api.auth.getToken()
+                val accessToken = api.getAccessToken()
                 val url = queries.storageResolve(streamable.id).json.cdnUrl.first()
                 val time = "time=${System.currentTimeMillis()}"
                 val decryption = Streamable.Decryption.Widevine(

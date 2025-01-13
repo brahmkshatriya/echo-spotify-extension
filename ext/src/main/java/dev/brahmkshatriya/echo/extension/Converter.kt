@@ -4,6 +4,7 @@ import dev.brahmkshatriya.echo.common.helpers.Page
 import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
+import dev.brahmkshatriya.echo.common.models.Date
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem.Companion.toMediaItem
 import dev.brahmkshatriya.echo.common.models.ImageHolder
@@ -41,10 +42,11 @@ import dev.brahmkshatriya.echo.extension.spotify.models.TracksV2
 import dev.brahmkshatriya.echo.extension.spotify.models.UserFollowers
 import dev.brahmkshatriya.echo.extension.spotify.models.UserProfileView
 import java.text.SimpleDateFormat
-import java.util.Date
+import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.ceil
+
 
 fun List<HomeFeed.Chip>.toTabs() = map {
     Tab(it.id!!, it.label?.transformedLabel!!)
@@ -111,7 +113,8 @@ fun ITrack.toTrack(a: Album? = null, url: String? = null): Track? {
         album = album,
         isExplicit = contentRating?.label == Label.EXPLICIT,
         duration = duration?.totalMilliseconds,
-        plays = playcount?.toLong()
+        plays = playcount?.toLong(),
+        releaseDate = album?.releaseDate,
     )
 }
 
@@ -121,14 +124,24 @@ fun Item.Playlist.toPlaylist(): Playlist? {
         id = uri ?: return null,
         title = name ?: return null,
         isEditable = false,
-        subtitle = desc,
         description = desc,
         cover = images?.items?.firstOrNull()?.toImageHolder(),
         authors = listOfNotNull(
             (ownerV2?.data?.toMediaItem() as? EchoMediaItem.Profile.UserItem)?.user
         ),
-        tracks = content?.totalCount
+        tracks = content?.totalCount,
+        duration = content?.toDuration(),
+        creationDate = content?.items?.map { it.addedAt?.toDate() }?.maxByOrNull { it?.year ?: 0 }
     )
+}
+
+private fun Item.Playlist.Content.toDuration(): Long? {
+    val items = items ?: return null
+    val average = items.run {
+        sumOf { it.itemV2?.data?.duration?.totalMilliseconds ?: 0 }.toDouble() / items.size
+    }
+    val count = totalCount ?: return null
+    return (average * count).toLong()
 }
 
 fun Item.PseudoPlaylist.toPlaylist(): Playlist? {
@@ -157,8 +170,47 @@ fun IAlbum.toAlbum(n: String? = null): Album? {
         subtitle = date?.year?.toString(),
         artists = artists.toArtists(),
         cover = coverArt?.toImageHolder(),
-        tracks = tracksV2?.totalCount
+        tracks = tracksV2?.totalCount,
+        duration = tracksV2?.toDuration(),
+        releaseDate = date?.toDate(),
+        description = buildString {
+            if (!courtesyLine.isNullOrBlank()) appendLine(courtesyLine)
+            copyright?.items?.forEach {
+                appendLine(it.text)
+            }
+        },
+        publisher = label
     )
+}
+
+fun TracksV2.toDuration(): Long? {
+    val average = items?.run {
+        sumOf { it.track?.duration?.totalMilliseconds ?: 0 }.toDouble() / items.size
+    } ?: return null
+    val count = totalCount ?: return null
+    return (average * count).toLong()
+}
+
+fun dev.brahmkshatriya.echo.extension.spotify.models.Date.toDate(): Date? {
+    if (isoString != null) return isoString.toDate(precision)
+    if (year != null) return Date(year)
+    return null
+}
+
+private fun String.toDate(precision: String? = null): Date {
+    val locale = Locale.ENGLISH
+    val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", locale)
+    formatter.timeZone = TimeZone.getTimeZone("UTC")
+    val targetTime = formatter.parse(this)
+    val calendar = Calendar.getInstance()
+    calendar.time = targetTime
+    val year = calendar.get(Calendar.YEAR)
+    val month = calendar.get(Calendar.MONTH) + 1
+    val day = calendar.get(Calendar.DAY_OF_MONTH)
+    println("$year $month $day")
+    if (precision == "YEAR") return Date(year)
+    if (precision == "MONTH") return Date(year, month)
+    return Date(year, month, day)
 }
 
 fun IArtist.toArtist(subtitle: String? = null): Artist? {
@@ -248,7 +300,7 @@ fun Item.toMediaItem(): EchoMediaItem? {
         is Item.PreRelease -> Album(
             id = preReleaseContent?.uri ?: return null,
             title = preReleaseContent.name ?: return null,
-            subtitle = releaseDate?.isoString?.toTimeString(timezone),
+            subtitle = "Pre-Release",
             artists = preReleaseContent.artists.toArtists(),
             cover = preReleaseContent.coverArt?.toImageHolder()
         ).toMediaItem()
@@ -271,7 +323,7 @@ fun Item.toMediaItem(): EchoMediaItem? {
             ),
             isExplicit = contentRating?.label == Label.EXPLICIT,
             duration = duration?.totalMilliseconds,
-            releaseDate = releaseDate?.isoString?.toTimeString(),
+            releaseDate = releaseDate?.toDate(),
         ).toMediaItem()
 
         is Item.Audiobook -> Track(
@@ -280,7 +332,7 @@ fun Item.toMediaItem(): EchoMediaItem? {
             cover = coverArt?.toImageHolder(),
             description = description?.removeHtml(),
             subtitle = authors?.joinToString(", ") { it.name ?: "" },
-            releaseDate = publishDate?.isoString?.toTimeString(),
+            releaseDate = publishDate?.toDate(),
         ).toMediaItem()
 
         is Item.Podcast -> Artist(
@@ -305,25 +357,6 @@ fun Item.toMediaItem(): EchoMediaItem? {
         is Item.RestrictedContent -> null
         is Item.GenericError -> null
     }
-}
-
-private fun String.toTimeString(timezone: String? = null): String {
-    val locale = Locale.ENGLISH
-    val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", locale)
-    formatter.timeZone = TimeZone.getTimeZone(timezone ?: "UTC")
-    val targetTime = formatter.parse(this)
-    val currentTime = Date()
-    val duration = targetTime.time - currentTime.time
-
-    val days = duration / (1000 * 60 * 60 * 24)
-    val hours = (duration / (1000 * 60 * 60)) % 24
-    val minutes = (duration / (1000 * 60)) % 60
-
-    return StringBuilder().apply {
-        if (days > 0) append(String.format(locale, "%02dd ", days))
-        if (hours > 0) append(String.format(locale, "%02dh ", hours))
-        if (minutes > 0) append(String.format(locale, "%02dm ", minutes))
-    }.toString()
 }
 
 val htmlRegex = Regex("<[^>]*>")
@@ -463,13 +496,8 @@ fun Canvas.toStreamable(): Streamable? {
     )
 }
 
-private fun Metadata4Track.Date.toReleaseDate(): String? {
-    val builder = StringBuilder()
-    if (day != null) builder.append("$day-")
-    if (month != null) builder.append("$month-")
-    if (year != null) builder.append("$year")
-    return builder.toString().ifEmpty { null }
-}
+private fun Metadata4Track.Date.toReleaseDate() =
+    if (year != null) Date(year, month, day) else null
 
 fun Metadata4Track.Format.isWorking(hasPremium: Boolean) = when (this) {
     Metadata4Track.Format.OGG_VORBIS_320 -> false
