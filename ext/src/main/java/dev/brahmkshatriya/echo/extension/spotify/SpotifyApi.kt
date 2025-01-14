@@ -133,17 +133,18 @@ class SpotifyApi(
         }
     }
 
-    suspend fun callGetBody(request: Request, ignore: Boolean = false, auth: String? = null) =
-        run {
-            val req = if (auth == null) request
-            else request.newBuilder().addHeader("Authorization", "Bearer $auth").build()
-            val res = client.newCall(req).await()
-            if (ignore || res.commonIsSuccessful) res.body.string()
-            else {
-                res.closeQuietly()
-                throw IOException("${res.code}: Failed to call - ${req.url}")
-            }
+    private suspend fun callGetBody(
+        request: Request, ignore: Boolean = false, auth: String? = null
+    ) = run {
+        val req = if (auth == null) request
+        else request.newBuilder().addHeader("Authorization", "Bearer $auth").build()
+        val res = client.newCall(req).await()
+        if (ignore || res.commonIsSuccessful) res.body.string()
+        else {
+            res.closeQuietly()
+            throw IOException("${res.code}: Failed to call - ${req.url}")
         }
+    }
 
     suspend fun getAccessToken(): String {
         return authMutex.withLock { auth.getToken() }

@@ -1,26 +1,31 @@
 package dev.brahmkshatriya.echo.extension.spotify
 
+import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import kotlinx.serialization.Serializable
+import okhttp3.OkHttpClient
 import okhttp3.Request
 
 class Authentication(
     private val api: SpotifyApi
 ) {
+    private val json = Json()
     var accessToken: String? = null
     private var tokenExpiration: Long = 0
+    private val client = OkHttpClient.Builder().build()
     private suspend fun createAccessToken(): String {
         val req = Request.Builder()
             .url("https://open.spotify.com/get_access_token?reason=transport&productType=web-player")
         if (api.token != null) req.header("Cookie", "sp_dc=${api.token}")
-        val response = with(api) {
-            val response = callGetBody(req.build(), true)
-            runCatching { json.decode<TokenResponse>(response) }.getOrElse {
-                throw json.decode<ErrorMessage>(response).error
-            }
+        println("Creating access token")
+        val body = client.newCall(req.build()).await().body.string()
+        println("res: $body")
+        val response = runCatching { json.decode<TokenResponse>(body) }.getOrElse {
+            throw json.decode<ErrorMessage>(body).error
         }
         accessToken = response.accessToken
         tokenExpiration = response.accessTokenExpirationTimestampMs - 5 * 60 * 1000
-        return response.accessToken
+        println("Expiry: $tokenExpiration")
+        return accessToken!!
     }
 
     suspend fun getToken() =
@@ -28,12 +33,15 @@ class Authentication(
         else accessToken!!
 
     fun clear() {
+        println("Clearing Token")
         accessToken = null
         tokenExpiration = 0
     }
 
     private fun isTokenWorking(expiry: Long): Boolean {
-        return System.currentTimeMillis() < expiry
+        return (System.currentTimeMillis() < expiry).also {
+            println("Checking token $it")
+        }
     }
 
 
