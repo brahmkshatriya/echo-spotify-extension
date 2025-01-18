@@ -76,7 +76,7 @@ fun Sections.toShelves(
                 Shelf.Lists.Categories(
                     title = title,
                     subtitle = subtitle,
-                    list = item.sectionItems?.items?.mapNotNull { it.toCategory(queries) }!!,
+                    list = item.sectionItems?.items?.mapNotNull { it.toBrowseCategory(queries) }!!,
                     type = Shelf.Lists.Type.Grid
                 )
             }
@@ -100,7 +100,7 @@ fun Sections.toShelves(
 
 private fun SectionItem.toCategory(api: Queries): Shelf.Category? {
     val item = sectionItems?.items?.firstOrNull() ?: return null
-    return item.toCategory(api)
+    return item.toBrowseCategory(api)
 }
 
 fun ITrack.toTrack(a: Album? = null, url: String? = null): Track? {
@@ -112,7 +112,7 @@ fun ITrack.toTrack(a: Album? = null, url: String? = null): Track? {
         artists = artists.toArtists(),
         album = album,
         isExplicit = contentRating?.label == Label.EXPLICIT,
-        duration = duration?.totalMilliseconds,
+        duration = duration?.totalMilliseconds ?: trackDuration?.totalMilliseconds,
         plays = playcount?.toLong(),
         releaseDate = album?.releaseDate,
     )
@@ -125,20 +125,21 @@ fun Item.Playlist.toPlaylist(): Playlist? {
         title = name ?: return null,
         isEditable = false,
         description = desc,
+        subtitle = ownerV2?.data?.name,
         cover = images?.items?.firstOrNull()?.toImageHolder(),
         authors = listOfNotNull(
             (ownerV2?.data?.toMediaItem() as? EchoMediaItem.Profile.UserItem)?.user
         ),
         tracks = content?.totalCount,
         duration = content?.toDuration(),
-        creationDate = content?.items?.map { it.addedAt?.toDate() }?.maxByOrNull { it?.year ?: 0 }
+        creationDate = content?.items?.map { it.addedAt?.toDate() }?.maxByOrNull { it ?: Date(0) }
     )
 }
 
 private fun Item.Playlist.Content.toDuration(): Long? {
     val items = items ?: return null
     val average = items.run {
-        sumOf { it.itemV2?.data?.duration?.totalMilliseconds ?: 0 }.toDouble() / items.size
+        sumOf { it.itemV2?.data?.trackDuration?.totalMilliseconds ?: 0 }.toDouble() / items.size
     }
     val count = totalCount ?: return null
     return (average * count).toLong()
@@ -201,13 +202,17 @@ private fun String.toDate(precision: String? = null): Date {
     val locale = Locale.ENGLISH
     val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", locale)
     formatter.timeZone = TimeZone.getTimeZone("UTC")
-    val targetTime = formatter.parse(this)
+    val targetTime = runCatching { formatter.parse(this) }.getOrElse {
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", locale).run {
+            timeZone = TimeZone.getTimeZone("UTC")
+            parse(this@toDate)
+        }
+    }
     val calendar = Calendar.getInstance()
     calendar.time = targetTime
     val year = calendar.get(Calendar.YEAR)
     val month = calendar.get(Calendar.MONTH) + 1
     val day = calendar.get(Calendar.DAY_OF_MONTH)
-    println("$year $month $day")
     if (precision == "YEAR") return Date(year)
     if (precision == "MONTH") return Date(year, month)
     return Date(year, month, day)
@@ -228,31 +233,42 @@ fun IArtist.toArtist(subtitle: String? = null): Artist? {
 fun Artists?.toArtists(subtitle: String? = null) =
     this?.items?.mapNotNull { it.toArtist(subtitle) } ?: listOf()
 
-
-@Suppress("UNUSED_PARAMETER")
-fun Albums.toShelf(title: String, queries: Queries): Shelf? {
+fun Artists.toShelf(
+    title: String, subtitle: String? = null, more: PagedData<EchoMediaItem>
+) : Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
         title = title,
-        list = items.mapNotNull { it.releases?.items?.firstOrNull()?.toAlbum()?.toMediaItem() }
+        subtitle = subtitle,
+        list = items.mapNotNull { it.toArtist(subtitle)?.toMediaItem() },
+        more = if (items.size > 3) more else null
     )
 }
 
-@Suppress("UNUSED_PARAMETER")
-fun Releases.toShelf(title: String, queries: Queries): Shelf? {
+fun Albums.toShelf(title: String, more: PagedData<EchoMediaItem>): Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
         title = title,
-        list = items.mapNotNull { it.toAlbum()?.toMediaItem() }
+        list = items.mapNotNull { it.releases?.items?.firstOrNull()?.toAlbum()?.toMediaItem() },
+        more = if (items.size > 3) more else null
     )
 }
 
-@Suppress("UNUSED_PARAMETER")
-private fun ItemsV2.toShelf(title: String, queries: Queries): Shelf? {
+fun Releases.toShelf(title: String, more: PagedData<EchoMediaItem>): Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
         title = title,
-        list = items.mapNotNull { it.toMediaItem() }
+        list = items.mapNotNull { it.toAlbum()?.toMediaItem() },
+        more = if (items.size > 3) more else null
+    )
+}
+
+private fun ItemsV2.toShelf(title: String, more: PagedData<EchoMediaItem>): Shelf? {
+    if (items.isNullOrEmpty()) return null
+    return Shelf.Lists.Items(
+        title = title,
+        list = items.mapNotNull { it.toMediaItem() },
+        more = if (items.size > 3) more else null
     )
 }
 
@@ -264,21 +280,109 @@ fun TracksV2.toTrackShelf(title: String): Shelf? {
     )
 }
 
-fun IArtist.toShelves(queries: Queries) = listOfNotNull(
-    discography?.topTracks?.toTrackShelf("Popular Tracks"),
-    discography?.latest?.toAlbum()?.toMediaItem()?.toShelf(true),
-    relatedContent?.featuringV2?.toShelf("Featuring ${profile?.name}", queries),
-    discography?.popularReleasesAlbums?.toShelf("Popular Albums", queries),
-    discography?.albums?.toShelf("Albums", queries),
-    discography?.singles?.toShelf("Singles", queries),
-    discography?.compilations?.toShelf("Compilations", queries),
-    profile?.playlistsV2?.toShelf("Playlists", queries),
-    relatedContent?.appearsOn?.toShelf("Appears On", queries),
-    relatedContent?.discoveredOnV2?.toShelf("Discovered On", queries),
-    relatedContent?.relatedArtists?.toArtists("Artist")?.let { list ->
-        Shelf.Lists.Items("Related Artists", list.map { it.toMediaItem() })
+fun pagedItemsV2(
+    block: suspend (offset: Int) -> ItemsV2
+): PagedData<EchoMediaItem> {
+    var count = 0L
+    return paged { offset ->
+        val res = block(offset)
+        val items = res.items?.mapNotNull { it.toMediaItem() } ?: emptyList()
+        val total = res.totalCount ?: 0
+        count += items.size
+        items to if (count < total) count else null
     }
-)
+}
+
+fun pagedArtists(
+    block: suspend (offset: Int) -> Artists
+): PagedData<EchoMediaItem> {
+    var count = 0L
+    return paged { offset ->
+        val res = block(offset)
+        val items = res.items?.mapNotNull { it.toArtist()?.toMediaItem() } ?: emptyList()
+        val total = res.totalCount ?: 0
+        count += items.size
+        items to if (count < total) count else null
+    }
+}
+
+fun pagedAlbums(
+    block: suspend (offset: Int) -> Albums
+): PagedData<EchoMediaItem> {
+    var count = 0L
+    return paged { offset ->
+        val res = block(offset)
+        val items = res.items?.map {
+            it.releases?.items?.firstOrNull()?.toAlbum()?.toMediaItem()!!
+        } ?: emptyList()
+        val total = res.totalCount ?: 0
+        count += items.size
+        items to if (count < total) count else null
+    }
+}
+
+fun IArtist.toShelves(queries: Queries): List<Shelf> {
+    val uri = uri ?: return emptyList()
+    return listOfNotNull(
+        discography?.topTracks?.toTrackShelf("Popular Tracks"),
+        discography?.latest?.toAlbum()?.toMediaItem()?.toShelf(true),
+        discography?.popularReleasesAlbums?.toShelf(
+            "Popular Albums",
+            pagedAlbums {
+                queries.queryArtistDiscographyAll(uri, it)
+                    .json.data.artistUnion.discography?.all!!
+            }
+        ),
+        relatedContent?.featuringV2?.toShelf("Featuring ${profile?.name}",
+            pagedItemsV2 {
+                queries.queryArtistFeaturing(uri, it)
+                    .json.data.artistUnion.relatedContent?.featuringV2!!
+            }
+        ),
+        discography?.albums?.toShelf("Albums",
+            pagedAlbums {
+                queries.queryArtistDiscographyAlbums(uri, it)
+                    .json.data.artistUnion.discography?.albums!!
+            }
+        ),
+        discography?.singles?.toShelf("Singles",
+            pagedAlbums {
+                queries.queryArtistDiscographySingles(uri, it)
+                    .json.data.artistUnion.discography?.singles!!
+            }
+        ),
+        discography?.compilations?.toShelf("Compilations",
+            pagedAlbums {
+                queries.queryArtistDiscographyCompilations(uri, it)
+                    .json.data.artistUnion.discography?.compilations!!
+            }
+        ),
+        profile?.playlistsV2?.toShelf("Playlists",
+            pagedItemsV2 {
+                queries.queryArtistPlaylists(uri, it)
+                    .json.data.artistUnion.profile?.playlistsV2!!
+            }
+        ),
+        relatedContent?.appearsOn?.toShelf("Appears On",
+            pagedAlbums {
+                queries.queryArtistAppearsOn(uri, it)
+                    .json.data.artistUnion.relatedContent?.appearsOn!!
+            }
+        ),
+        relatedContent?.discoveredOnV2?.toShelf("Discovered On",
+            pagedItemsV2 {
+                queries.queryArtistDiscoveredOn(uri, it)
+                    .json.data.artistUnion.relatedContent?.discoveredOnV2!!
+            }
+        ),
+        relatedContent?.relatedArtists?.toShelf("Artist", "Artist",
+            pagedArtists {
+                queries.queryArtistRelated(uri, it)
+                    .json.data.artistUnion.relatedContent?.relatedArtists!!
+            }
+        )
+    )
+}
 
 val likedPlaylist = Playlist(
     "spotify:collection:tracks",
@@ -379,7 +483,7 @@ fun <T : Any> paged(
     Page(data, next?.toString())
 }
 
-fun ItemsItem.toCategory(queries: Queries): Shelf.Category? {
+fun ItemsItem.toBrowseCategory(queries: Queries): Shelf.Category? {
     val uri = uri
     val item = content.data
     if (item !is Item.BrowseSectionContainer) return null

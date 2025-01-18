@@ -23,7 +23,7 @@ class SpotifyApi(
     val token get() = _token
 
     private val authMutex = Mutex()
-    private val auth = Authentication(this)
+    val auth = Authentication(this)
     private var _token: String? = null
     suspend fun setToken(token: String?) {
         _token = token

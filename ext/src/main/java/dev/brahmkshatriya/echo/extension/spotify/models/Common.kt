@@ -74,6 +74,7 @@ data class Track(
     override val artists: Artists? = null,
     override val contentRating: ContentRating? = null,
     override val duration: Duration? = null,
+    override val trackDuration: Duration? = null,
     override val name: String? = null,
     override val playability: Playability? = null,
     override val playcount: String? = null,
@@ -82,13 +83,14 @@ data class Track(
     override val trackNumber: Long? = null,
     override val firstArtist: Artists? = null,
     override val otherArtists: Artists? = null,
-): ITrack
+) : ITrack
 
 interface ITrack {
     val albumOfTrack: Album?
     val artists: Artists?
     val contentRating: ContentRating?
     val duration: Duration?
+    val trackDuration: Duration?
     val name: String?
     val playability: Playability?
     val playcount: String?
@@ -122,7 +124,7 @@ data class Album(
     override val type: String? = null,
     override val id: String? = null,
     override val moreAlbumsByArtist: Artists? = null,
-): IAlbum
+) : IAlbum
 
 interface IAlbum {
     val courtesyLine: String?
@@ -159,7 +161,7 @@ data class Artist(
     override val stats: Stats? = null,
     override val uri: String? = null,
     override val visuals: Visuals? = null,
-): IArtist
+) : IArtist
 
 interface IArtist {
     val discography: Discography?
@@ -213,6 +215,7 @@ data class TopCitiesItem(
 
 @Serializable
 data class Discography(
+    val all: Albums? = null,
     val albums: Albums? = null,
     val compilations: Albums? = null,
     val latest: Album? = null,

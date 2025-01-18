@@ -65,7 +65,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         setting = settings
     }
 
-    private val api by lazy {
+    val api by lazy {
         SpotifyApi {
             val token = token
             if (it.code == 401 && token != null) throw ClientException.Unauthorized(token)

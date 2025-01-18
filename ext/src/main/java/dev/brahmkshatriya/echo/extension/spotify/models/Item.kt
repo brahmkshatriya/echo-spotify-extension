@@ -200,6 +200,7 @@ sealed interface Item {
         val associations: Associations? = null,
         override val contentRating: ContentRating? = null,
         override val duration: Duration? = null,
+        override val trackDuration: Duration? = null,
         val id: String? = null,
         override val name: String? = null,
         override val playability: Playability? = null,

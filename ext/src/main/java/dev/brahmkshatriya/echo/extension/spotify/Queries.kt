@@ -78,9 +78,11 @@ class Queries(
         }
     )
 
-    private fun JsonObjectBuilder.applySearchVariables(query: String, topResults: Int) {
+    private fun JsonObjectBuilder.applySearchVariables(
+        query: String, offset: Int, topResults: Int = 1
+    ) {
         put("searchTerm", query)
-        put("offset", 0)
+        put("offset", offset)
         put("limit", 10)
         put("numberOfTopResults", topResults)
         put("includeAudiobooks", true)
@@ -91,7 +93,7 @@ class Queries(
         "searchDesktop",
         "2ae11a661a59c58695ad9b8bd6605dce6e3876f900555e21543c19f7a0a0ea6a",
         buildJsonObject {
-            applySearchVariables(query, topResults)
+            applySearchVariables(query, 0, topResults)
             put("includeArtistHasConcertsField", false)
             put("includeLocalConcertsField", false)
         }
@@ -158,7 +160,6 @@ class Queries(
         "19ff1327c29e99c208c86d7a9d8f1929cfdf3d3202a0ff4253c821f1901aa94d",
         buildJsonObject {
             put("uri", uri)
-            put("offset", 9999)
         }
     )
 
@@ -290,6 +291,105 @@ class Queries(
             put("locale", "")
         }
     )
+
+    suspend fun queryArtistDiscographyAll(uri: String, offset: Int) =
+        api.graphQuery<ArtistOverview>(
+            "queryArtistDiscographyAll",
+            "9380995a9d4663cbcb5113fef3c6aabf70ae6d407ba61793fd01e2a1dd6929b0",
+            buildJsonObject {
+                put("uri", uri)
+                put("offset", offset)
+                put("limit", 50)
+            }
+        )
+
+    suspend fun queryArtistDiscographyAlbums(uri: String, offset: Int) =
+        api.graphQuery<ArtistOverview>(
+            "queryArtistDiscographyAlbums",
+            "9380995a9d4663cbcb5113fef3c6aabf70ae6d407ba61793fd01e2a1dd6929b0",
+            buildJsonObject {
+                put("uri", uri)
+                put("offset", offset)
+                put("limit", 50)
+            }
+        )
+
+    suspend fun queryArtistDiscographySingles(uri:String, offset:Int) =
+        api.graphQuery<ArtistOverview>(
+            "queryArtistDiscographySingles",
+            "9380995a9d4663cbcb5113fef3c6aabf70ae6d407ba61793fd01e2a1dd6929b0",
+            buildJsonObject {
+                put("uri", uri)
+                put("offset", offset)
+                put("limit", 50)
+            }
+        )
+
+    suspend fun queryArtistDiscographyCompilations(uri: String, offset: Int) =
+        api.graphQuery<ArtistOverview>(
+            "queryArtistDiscographyCompilations",
+            "9380995a9d4663cbcb5113fef3c6aabf70ae6d407ba61793fd01e2a1dd6929b0",
+            buildJsonObject {
+                put("uri", uri)
+                put("offset", offset)
+                put("limit", 50)
+            }
+        )
+
+    suspend fun queryArtistAppearsOn(uri: String, offset: Int) =
+        api.graphQuery<ArtistOverview>(
+            "queryArtistAppearsOn",
+            "9a4bb7a20d6720fe52d7b47bc001cfa91940ddf5e7113761460b4a288d18a4c1",
+            buildJsonObject {
+                put("uri", uri)
+                put("offset", offset)
+                put("limit", 50)
+            }
+        )
+
+    suspend fun queryArtistFeaturing(uri: String, offset: Int) =
+        api.graphQuery<ArtistOverview>(
+            "queryArtistFeaturing",
+            "20842d6d9d2d28ef945984b68cb927bb33edd00eab84a8da1667def21f1f2c54",
+            buildJsonObject {
+                put("uri", uri)
+                put("offset", offset)
+                put("limit", 50)
+            }
+        )
+
+    suspend fun queryArtistPlaylists(uri:String, offset: Int) =
+        api.graphQuery<ArtistOverview>(
+            "queryArtistPlaylists",
+            "54f7e5a5a2af05b7dc98526df376a46c6b15c05440c8dfdc8f6cecb1a807eca7",
+            buildJsonObject {
+                put("uri", uri)
+                put("offset", offset)
+                put("limit", 50)
+            }
+        )
+
+    suspend fun queryArtistDiscoveredOn(uri: String, offset: Int) =
+        api.graphQuery<ArtistOverview>(
+            "queryArtistDiscoveredOn",
+            "71c2392e4cecf6b48b9ad1311ae08838cbdabcfd189c6bf0c66c2430b8dcfdb1",
+            buildJsonObject {
+                put("uri", uri)
+                put("offset", offset)
+                put("limit", 50)
+            }
+        )
+
+    suspend fun queryArtistRelated(uri: String, offset: Int) =
+        api.graphQuery<ArtistOverview>(
+            "queryArtistRelated",
+            "3d031d6cb22a2aa7c8d203d49b49df731f58b1e2799cc38d9876d58771aa66f3",
+            buildJsonObject {
+                put("uri", uri)
+                put("offset", offset)
+                put("limit", 50)
+            }
+        )
 
     suspend fun userTopContent() = api.graphQuery<UserTopContent>(
         "userTopContent",

@@ -6,6 +6,7 @@ import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem.Companion.toMediaItem
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Shelf
+import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.extension.spotify.Base62
@@ -62,13 +63,13 @@ class LibraryTest {
         println(extension.queries.metadata4Track("9ddc535dfd344ebbb280514a0d7dc5c3"))
     }
 
-    private fun Shelf.print() {
+    private suspend fun Shelf.print() {
         when (this) {
             is Shelf.Category -> println(this)
             is Shelf.Item -> println(this)
             is Shelf.Lists<*> -> {
                 println("${this.title} : ${this.list.size}")
-                this.list.forEach { println(it) }
+                println("More: ${this.more?.loadAll()?.size}")
             }
         }
     }
@@ -86,16 +87,14 @@ class LibraryTest {
 
     @Test
     fun testSearch() = testIn("Testing Search") {
-        val searchQuery = "hero"
+        val searchQuery = "Vump"
         val quickSearch = extension.quickSearch(searchQuery)
         quickSearch.forEach { println(it) }
-        val tabs = extension.searchTabs(searchQuery)
-        tabs.forEach { tab ->
-            println("Tab: $tab")
-            val feed = extension.searchFeed(searchQuery, tab)
-            val shelves = feed.loadFirst()
-            shelves.forEach { it.print() }
-        }
+        val feed = extension.searchFeed(searchQuery, Tab("USERS", ""))
+        val page = feed.loadList(null)
+        println("Page ${page.continuation}: ${page.data}")
+        val page2 = feed.loadList(page.continuation)
+        println("Page ${page.continuation}: ${page2.data}")
     }
 
     @Test
@@ -131,7 +130,7 @@ class LibraryTest {
     @Test
     fun testPlaylist() = testIn("Playlist Test") {
         val playlist = extension.loadPlaylist(
-            Playlist("spotify:playlist:3uTkolMJaNbwJBdWULPuPi", "", false)
+            Playlist("spotify:playlist:6M7CldjyAmTW8UsLIA1mSs", "", false)
         )
         println(playlist)
         val tracks = extension.loadTracks(playlist).loadAll()
@@ -169,11 +168,12 @@ class LibraryTest {
     @Test
     fun testRadio() = testIn("Radio Test") {
         val radio = extension.radio(
-            Album("spotify:album:6a6wiQNPcQMV8K17HDKtrC", "")
+            Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", ""), null
         )
         println(radio)
         val tracks = extension.loadTracks(radio).loadAll()
         println("Tracks: ${tracks.size}")
+        tracks.forEach { println(it) }
     }
 
     @Test
