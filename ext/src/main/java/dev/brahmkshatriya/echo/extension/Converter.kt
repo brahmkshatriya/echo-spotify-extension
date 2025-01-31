@@ -457,6 +457,7 @@ fun Item.toMediaItem(): EchoMediaItem? {
         is Item.BrowseSectionContainer -> null
         is Item.Genre -> null
         is Item.Folder -> null
+        is Item.Merch -> null
         is Item.NotFound -> null
         is Item.RestrictedContent -> null
         is Item.GenericError -> null

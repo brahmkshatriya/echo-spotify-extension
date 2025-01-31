@@ -250,6 +250,18 @@ sealed interface Item {
     ) : Item
 
     @Serializable
+    @SerialName("Merch")
+    data class Merch(
+        @SerialName("__typename")
+        override val typename: String,
+
+        val image: Artwork? = null,
+        val nameV2: String? = null,
+        val price: String? = null,
+        val uri: String? = null,
+    ) : Item
+
+    @Serializable
     @SerialName("NotFound")
     data class NotFound(
         @SerialName("__typename")
