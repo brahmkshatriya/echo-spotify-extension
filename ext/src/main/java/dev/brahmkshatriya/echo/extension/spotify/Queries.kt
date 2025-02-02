@@ -15,6 +15,7 @@ import dev.brahmkshatriya.echo.extension.spotify.models.FetchPlaylist
 import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
 import dev.brahmkshatriya.echo.extension.spotify.models.GetTrack
 import dev.brahmkshatriya.echo.extension.spotify.models.HomeFeed
+import dev.brahmkshatriya.echo.extension.spotify.models.HomeSection
 import dev.brahmkshatriya.echo.extension.spotify.models.InternalLinkRecommenderTrack
 import dev.brahmkshatriya.echo.extension.spotify.models.LibraryV3
 import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track
@@ -283,6 +284,19 @@ class Queries(
         }
     )
 
+    suspend fun homeSection(uri: String, token: String? = null, offset: Int) =
+        api.graphQuery<HomeSection>(
+            "homeSection",
+            "b3ef823f52e8e4c30e693ef24431b89760be10b429f2563ceaf169846dc5c4ab",
+            buildJsonObject {
+                put("timeZone", TimeZone.getDefault().id!!)
+                put("sp_t", token ?: "")
+                put("uri", uri)
+                put("sectionItemsOffset", offset)
+                put("sectionItemsLimit", 20)
+            }
+        )
+
     suspend fun queryArtistOverview(uri: String) = api.graphQuery<ArtistOverview>(
         "queryArtistOverview",
         "4bc52527bb77a5f8bbb9afe491e9aa725698d29ab73bff58d49169ee29800167",
@@ -314,7 +328,7 @@ class Queries(
             }
         )
 
-    suspend fun queryArtistDiscographySingles(uri:String, offset:Int) =
+    suspend fun queryArtistDiscographySingles(uri: String, offset: Int) =
         api.graphQuery<ArtistOverview>(
             "queryArtistDiscographySingles",
             "9380995a9d4663cbcb5113fef3c6aabf70ae6d407ba61793fd01e2a1dd6929b0",
@@ -358,7 +372,7 @@ class Queries(
             }
         )
 
-    suspend fun queryArtistPlaylists(uri:String, offset: Int) =
+    suspend fun queryArtistPlaylists(uri: String, offset: Int) =
         api.graphQuery<ArtistOverview>(
             "queryArtistPlaylists",
             "54f7e5a5a2af05b7dc98526df376a46c6b15c05440c8dfdc8f6cecb1a807eca7",

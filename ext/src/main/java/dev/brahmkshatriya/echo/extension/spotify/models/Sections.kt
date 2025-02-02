@@ -43,6 +43,7 @@ data class Sections(
         HomeFeedBaselineSectionData,
         HomeRecentlyPlayedSectionData,
         HomeOnboardingSectionDataV2,
+        HomeWatchFeedSectionData,
         BrowseGenericSectionData,
         BrowseGridSectionData,
         BrowseUnsupportedSectionData,
@@ -52,6 +53,7 @@ data class Sections(
     @Serializable
     data class Items(
         val items: List<ItemsItem>? = null,
+        val pagingInfo: PagingInfo? = null,
         val totalCount: Long? = null
     )
 

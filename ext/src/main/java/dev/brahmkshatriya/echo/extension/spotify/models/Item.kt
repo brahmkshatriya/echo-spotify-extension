@@ -238,6 +238,16 @@ sealed interface Item {
     ) : Item
 
     @Serializable
+    @SerialName("DiscoveryFeed")
+    data class DiscoveryFeed(
+        @SerialName("__typename")
+        override val typename: String,
+
+        val title: Title,
+        val uri: String,
+    ) : Item
+
+    @Serializable
     @SerialName("Folder")
     data class Folder(
         @SerialName("__typename")

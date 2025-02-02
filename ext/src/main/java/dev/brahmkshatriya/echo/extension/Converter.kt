@@ -54,7 +54,8 @@ fun List<HomeFeed.Chip>.toTabs() = map {
 
 fun Sections.toShelves(
     queries: Queries,
-    emptyTitle: String? = null
+    emptyTitle: String? = null,
+    token: String? = null,
 ): List<Shelf> {
     return items?.mapNotNull { item ->
         item.data ?: return@mapNotNull null
@@ -65,12 +66,26 @@ fun Sections.toShelves(
         val subtitle = item.data.subtitle?.transformedLabel
         when (item.data.typename) {
             null -> null
-            Sections.Typename.BrowseGenericSectionData, Sections.Typename.HomeGenericSectionData, Sections.Typename.HomeRecentlyPlayedSectionData ->
+            Sections.Typename.BrowseGenericSectionData, Sections.Typename.HomeRecentlyPlayedSectionData ->
                 Shelf.Lists.Items(
                     title = title,
                     subtitle = subtitle,
                     list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem() }!!,
                 )
+
+            Sections.Typename.HomeGenericSectionData -> Shelf.Lists.Items(
+                title = title,
+                subtitle = subtitle,
+                list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem() }!!,
+                more = if (item.uri != null && (item.sectionItems.totalCount ?: 0) > 3)
+                    paged { offset ->
+                        val sectionItem = queries.homeSection(item.uri, token, offset).json
+                            .data.homeSections.sections.first().sectionItems
+                        val next = sectionItem.pagingInfo?.nextOffset
+                        sectionItem.items!!.mapNotNull { it.content.toMediaItem() } to next
+                    }
+                else null
+            )
 
             Sections.Typename.BrowseGridSectionData -> {
                 Shelf.Lists.Categories(
@@ -94,6 +109,7 @@ fun Sections.toShelves(
 
             Sections.Typename.BrowseUnsupportedSectionData -> null
             Sections.Typename.HomeOnboardingSectionDataV2 -> null
+            Sections.Typename.HomeWatchFeedSectionData -> null
         }
     }!!
 }
@@ -235,7 +251,7 @@ fun Artists?.toArtists(subtitle: String? = null) =
 
 fun Artists.toShelf(
     title: String, subtitle: String? = null, more: PagedData<EchoMediaItem>
-) : Shelf? {
+): Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
         title = title,
@@ -461,6 +477,7 @@ fun Item.toMediaItem(): EchoMediaItem? {
         is Item.NotFound -> null
         is Item.RestrictedContent -> null
         is Item.GenericError -> null
+        is Item.DiscoveryFeed -> null
     }
 }
 
