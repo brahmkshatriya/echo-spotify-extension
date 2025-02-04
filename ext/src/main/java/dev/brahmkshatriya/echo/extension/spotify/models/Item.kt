@@ -242,8 +242,8 @@ sealed interface Item {
     data class DiscoveryFeed(
         @SerialName("__typename")
         override val typename: String,
-
-        val title: Title,
+        val firstItem: Wrapper?,
+        val title: String,
         val uri: String,
     ) : Item
 
