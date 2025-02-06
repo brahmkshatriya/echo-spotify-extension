@@ -56,9 +56,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     TrackClient, TrackLikeClient, TrackHideClient, RadioClient, SaveToLibraryClient,
     AlbumClient, PlaylistClient, ArtistClient, ArtistFollowClient, PlaylistEditClient {
 
-    override suspend fun onExtensionSelected() {}
     override val settingItems: List<Setting> = emptyList()
-
 
     private lateinit var setting: Settings
     override fun setSettings(settings: Settings) {

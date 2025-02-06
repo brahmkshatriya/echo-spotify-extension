@@ -295,6 +295,13 @@ sealed interface Item {
     ) : Item
 
     @Serializable
+    @SerialName("BrowseSpacesHub")
+    data class BrowseSpacesHub(
+        @SerialName("__typename")
+        override val typename: String,
+    ) : Item
+
+    @Serializable
     data class Wrapper(
         @SerialName("__typename")
         val typename: String? = null,
