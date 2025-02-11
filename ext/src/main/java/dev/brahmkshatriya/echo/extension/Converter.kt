@@ -73,19 +73,20 @@ fun Sections.toShelves(
                     list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem() }!!,
                 )
 
-            Sections.Typename.HomeGenericSectionData -> Shelf.Lists.Items(
-                title = title,
-                subtitle = subtitle,
-                list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem() }!!,
-                more = if (item.uri != null && (item.sectionItems.totalCount ?: 0) > 3)
-                    paged { offset ->
-                        val sectionItem = queries.homeSection(item.uri, token, offset).json
-                            .data.homeSections.sections.first().sectionItems
-                        val next = sectionItem.pagingInfo?.nextOffset
-                        sectionItem.items!!.mapNotNull { it.content.toMediaItem() } to next
-                    }
-                else null
-            )
+            Sections.Typename.HomeGenericSectionData, Sections.Typename.HomeSpotlightSectionData ->
+                Shelf.Lists.Items(
+                    title = title,
+                    subtitle = subtitle,
+                    list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem() }!!,
+                    more = if (item.uri != null && (item.sectionItems.totalCount ?: 0) > 3)
+                        paged { offset ->
+                            val sectionItem = queries.homeSection(item.uri, token, offset).json
+                                .data.homeSections.sections.first().sectionItems
+                            val next = sectionItem.pagingInfo?.nextOffset
+                            sectionItem.items!!.mapNotNull { it.content.toMediaItem() } to next
+                        }
+                    else null
+                )
 
             Sections.Typename.BrowseGridSectionData -> {
                 Shelf.Lists.Categories(
