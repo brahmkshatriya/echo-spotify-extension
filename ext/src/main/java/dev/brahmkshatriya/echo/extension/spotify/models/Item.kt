@@ -154,7 +154,7 @@ sealed interface Item {
         val name: String? = null,
         val playability: Playability? = null,
         val playedState: PlayedState? = null,
-        val podcastV2: Wrapper? = null,
+        val podcastV2: CustomWrapper<Podcast>? = null,
         val releaseDate: Date? = null,
         val restrictions: Restrictions? = null,
         val uri: String? = null,
@@ -171,6 +171,21 @@ sealed interface Item {
         val name: String? = null,
         val publisher: Profile? = null,
         val topics: Topics? = null,
+        val uri: String? = null,
+    ) : Item
+
+    @Serializable
+    @SerialName("Chapter")
+    data class Chapter(
+        @SerialName("__typename")
+        override val typename: String,
+        val audiobookV2: CustomWrapper<Audiobook>? = null,
+        val contentRating: ContentRating? = null,
+        val coverArt: Artwork? = null,
+        val description: String? = null,
+        val duration: Duration? = null,
+        val name: String? = null,
+        val playedState: PlayedState? = null,
         val uri: String? = null,
     ) : Item
 
@@ -306,6 +321,14 @@ sealed interface Item {
         @SerialName("__typename")
         val typename: String? = null,
         val data: Item? = null,
+        val uri: String? = null,
+    )
+
+    @Serializable
+    data class CustomWrapper<T : Item>(
+        @SerialName("__typename")
+        val typename: String? = null,
+        val data: T? = null,
         val uri: String? = null,
     )
 

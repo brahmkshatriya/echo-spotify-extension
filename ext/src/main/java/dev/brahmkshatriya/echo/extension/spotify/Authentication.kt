@@ -6,6 +6,7 @@ import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 class Authentication(
     private val api: SpotifyApi
@@ -26,7 +27,9 @@ class Authentication(
             .url("https://open.spotify.com/get_access_token?reason=transport&productType=web-player")
         val body = client.newCall(req.build()).await().body.string()
         val response = runCatching { json.decode<TokenResponse>(body) }.getOrElse {
-            throw json.decode<ErrorMessage>(body).error
+            throw runCatching { json.decode<ErrorMessage>(body).error }.getOrElse {
+                IOException(body)
+            }
         }
         clientId = response.clientId
         accessToken = response.accessToken

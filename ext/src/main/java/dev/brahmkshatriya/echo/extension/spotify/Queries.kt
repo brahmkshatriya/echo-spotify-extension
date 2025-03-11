@@ -239,7 +239,10 @@ class Queries(
         }
     )
 
-    suspend fun metadata4Track(id: String) = api.clientQuery<Metadata4Track>("metadata/4/track/$id")
+    suspend fun metadata4Track(id: String) = run {
+        val gid = Base62.decode(id.substringAfter("spotify:track:"))
+        api.clientQuery<Metadata4Track>("metadata/4/track/$gid")
+    }
 
     suspend fun storageResolve(id: String) = api.clientQuery<StorageResolve>(
         "storage-resolve/v2/files/audio/interactive/10/$id?version=10000000&product=9&platform=39&alt=json"

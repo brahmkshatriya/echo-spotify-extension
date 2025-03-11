@@ -38,7 +38,6 @@ import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.common.settings.Setting
 import dev.brahmkshatriya.echo.common.settings.Settings
-import dev.brahmkshatriya.echo.extension.spotify.Base62
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
@@ -223,8 +222,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         val hasPremium = hasPremium()
         val canvas = async { queries.canvas(track.id).json.toStreamable() }
         val isLiked = async { isSavedToLibrary(track.toMediaItem()) }
-        val id = Base62.decode(track.id.substringAfter("spotify:track:"))
-        queries.metadata4Track(id).json.toTrack(
+        queries.metadata4Track(track.id).json.toTrack(
             hasPremium,
             canvas.await()
         ).copy(

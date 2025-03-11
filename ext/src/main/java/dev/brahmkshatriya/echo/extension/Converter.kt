@@ -250,6 +250,26 @@ fun IArtist.toArtist(subtitle: String? = null): Artist? {
 fun Artists?.toArtists(subtitle: String? = null) =
     this?.items?.mapNotNull { it.toArtist(subtitle) } ?: listOf()
 
+fun Item.Podcast.toArtist(): Artist? {
+    return Artist(
+        id = uri ?: return null,
+        name = name ?: return null,
+        subtitle = "Podcast",
+        cover = coverArt?.toImageHolder(),
+    )
+}
+
+fun Item.Audiobook.toAlbum(): Album? {
+    return Album(
+        id = uri ?: return null,
+        title = name ?: return null,
+        cover = coverArt?.toImageHolder(),
+        description = description?.removeHtml(),
+        subtitle = "Audiobook",
+        releaseDate = publishDate?.toDate(),
+    )
+}
+
 fun Artists.toShelf(
     title: String, subtitle: String? = null, more: PagedData<EchoMediaItem>
 ): Shelf? {
@@ -440,28 +460,27 @@ fun Item.toMediaItem(): EchoMediaItem? {
             cover = coverArt?.toImageHolder(),
             description = description?.removeHtml(),
             artists = listOfNotNull(
-                (podcastV2?.toMediaItem() as? EchoMediaItem.Profile.ArtistItem)?.artist
+                podcastV2?.data?.toArtist()?.toMediaItem()?.artist
             ),
             isExplicit = contentRating?.label == Label.EXPLICIT,
             duration = duration?.totalMilliseconds,
             releaseDate = releaseDate?.toDate(),
         ).toMediaItem()
 
-        is Item.Audiobook -> Track(
+        is Item.Podcast -> toArtist()?.toMediaItem()
+
+        is Item.Chapter -> Track(
             id = uri ?: return null,
             title = name ?: return null,
             cover = coverArt?.toImageHolder(),
             description = description?.removeHtml(),
-            subtitle = authors?.joinToString(", ") { it.name ?: "" },
-            releaseDate = publishDate?.toDate(),
+            album = audiobookV2?.data?.toAlbum(),
+            isExplicit = contentRating?.label == Label.EXPLICIT,
+            duration = duration?.totalMilliseconds,
         ).toMediaItem()
 
-        is Item.Podcast -> Artist(
-            id = uri ?: return null,
-            name = name ?: return null,
-            subtitle = "Podcast",
-            cover = coverArt?.toImageHolder(),
-        ).toMediaItem()
+        is Item.Audiobook -> toAlbum()?.toMediaItem()
+
 
         is Item.User -> Artist(
             id = uri ?: return null,
@@ -640,6 +659,7 @@ fun Metadata4Track.toTrack(
     canvas: Streamable?
 ): Track {
     val id = "spotify:track:${Base62.encode(gid!!)}"
+    println("${id == canonicalUri} $id == $canonicalUri")
     val title = name!!
     val streamables = (file ?: alternative?.firstOrNull()?.file).orEmpty().mapNotNull {
         val url = it.fileId ?: return@mapNotNull null

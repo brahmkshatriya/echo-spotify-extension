@@ -140,7 +140,10 @@ class LibraryTest {
 //        shelves.forEach { it.print() }
     }
 
-    val json = Json { prettyPrint = true }
+    val json = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
+    }
 
     @Test
     fun testAlbum() = testIn("Album Test") {
