@@ -30,7 +30,7 @@ class Authentication(
     private suspend fun createAccessToken(): String {
         val time = System.currentTimeMillis()
         val steps = toHexString(time / 30000).uppercase(Locale.getDefault())
-        val totp = TOTP.generateTOTP(SEED, steps, "6", "HmacSHA1")
+        val totp = TOTP.generateTOTP(SEED, steps, 6, "HmacSHA1")
         val req = Request.Builder()
             .url("https://open.spotify.com/get_access_token?reason=transport&productType=web-player&totp=$totp&totpVer=5&ts=${time}")
 
