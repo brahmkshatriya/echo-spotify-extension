@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.extension.spotify
 import java.lang.reflect.UndeclaredThrowableException
 import java.math.BigInteger
 import java.security.GeneralSecurityException
+import java.util.Locale
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -19,7 +20,7 @@ object TOTP {
         }
     }
 
-    private fun hexStr2Bytes(hex: String): ByteArray {
+    private fun hexToBytes(hex: String): ByteArray {
         val bArray = BigInteger("10$hex", 16).toByteArray()
         val ret = ByteArray(bArray.size - 1)
         for (i in ret.indices) ret[i] = bArray[i + 1]
@@ -30,29 +31,21 @@ object TOTP {
         intArrayOf(1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000)
 
     fun generateTOTP(
-        key: String, time: String, returnDigits: String, crypto: String
+        key: String, time: String, returnDigits: Int = 6, crypto: String
     ): String {
-        var t = time
-        val codeDigits = Integer.decode(returnDigits)
-        var result: String?
-        while (t.length < 16) t = "0$t"
-        val msg = hexStr2Bytes(t)
-        val k = hexStr2Bytes(key)
+        val t = time.padStart(16, '0')
+        val msg = hexToBytes(t)
+        val k = hexToBytes(key)
 
         val hash = hMacSha(crypto, k, msg)
-        val offset = hash[hash.size - 1].toInt() and 0xf
+        val offset = hash.last().toInt() and 0xf
 
         val binary = ((hash[offset].toInt() and 0x7f) shl 24) or
                 ((hash[offset + 1].toInt() and 0xff) shl 16) or
                 ((hash[offset + 2].toInt() and 0xff) shl 8) or
                 (hash[offset + 3].toInt() and 0xff)
 
-        val otp = binary % DIGITS_POWER[codeDigits]
-
-        result = otp.toString()
-        while (result!!.length < codeDigits) {
-            result = "0$result"
-        }
-        return result
+        val otp = binary % DIGITS_POWER[returnDigits]
+        return otp.toString().padStart(returnDigits, '0')
     }
 }
