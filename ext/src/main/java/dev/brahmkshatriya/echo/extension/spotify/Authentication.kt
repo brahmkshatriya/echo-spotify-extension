@@ -29,8 +29,7 @@ class Authentication(
 
     private suspend fun createAccessToken(): String {
         val time = System.currentTimeMillis()
-        val steps = toHexString(time / 30000).uppercase(Locale.getDefault())
-        val totp = TOTP.generateTOTP(SEED, steps, 6, "HmacSHA1")
+        val totp = generateTotp(time)
         val req = Request.Builder()
             .url("https://open.spotify.com/get_access_token?reason=transport&productType=web-player&totp=$totp&totpVer=5&ts=${time}")
 
@@ -44,6 +43,22 @@ class Authentication(
         accessToken = response.accessToken
         tokenExpiration = response.accessTokenExpirationTimestampMs - 5 * 60 * 1000
         return accessToken!!
+    }
+
+    private fun generateTotp(time: Long): String {
+        val secretCipherBytes = listOf(
+            12, 56, 76, 33, 88, 44, 88, 33, 78, 78, 11, 66, 22, 22, 55, 69, 54
+        ).mapIndexed { index, byte -> byte xor (index % 33 + 9) }
+            .joinToString("") { "%02x".format(it) }
+
+        val secret =
+            secretCipherBytes.toByteArray(Charsets.UTF_8).joinToString("") { "%02x".format(it) }
+
+        val steps = toHexString(time / 30000).uppercase(Locale.getDefault())
+
+        return TOTP.generateTOTP(
+            secret, steps, 6, "HmacSHA1"
+        )
     }
 
     suspend fun getToken() =
@@ -97,10 +112,5 @@ class Authentication(
         val new = createCookie()
         this.cookie = new
         return new.value
-    }
-
-    companion object {
-        // Thanks to https://github.com/Adolar0042/ the goat
-        const val SEED = "35353037313435383533343837343939353932323438363330333239333437"
     }
 }

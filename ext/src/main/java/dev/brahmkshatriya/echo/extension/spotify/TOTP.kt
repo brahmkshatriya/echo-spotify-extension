@@ -3,6 +3,7 @@ package dev.brahmkshatriya.echo.extension.spotify
 import java.lang.reflect.UndeclaredThrowableException
 import java.math.BigInteger
 import java.security.GeneralSecurityException
+import java.util.Locale
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -19,7 +20,7 @@ object TOTP {
         }
     }
 
-    private fun hexStr2Bytes(hex: String): ByteArray {
+    private fun hexToBytes(hex: String): ByteArray {
         val bArray = BigInteger("10$hex", 16).toByteArray()
         val ret = ByteArray(bArray.size - 1)
         for (i in ret.indices) ret[i] = bArray[i + 1]
@@ -33,8 +34,8 @@ object TOTP {
         key: String, time: String, returnDigits: Int = 6, crypto: String
     ): String {
         val t = time.padStart(16, '0')
-        val msg = hexStr2Bytes(t)
-        val k = hexStr2Bytes(key)
+        val msg = hexToBytes(t)
+        val k = hexToBytes(key)
 
         val hash = hMacSha(crypto, k, msg)
         val offset = hash.last().toInt() and 0xf
