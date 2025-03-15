@@ -46,18 +46,10 @@ class Authentication(
     }
 
     private fun generateTotp(time: Long): String {
-        val secretCipherBytes = listOf(
-            12, 56, 76, 33, 88, 44, 88, 33, 78, 78, 11, 66, 22, 22, 55, 69, 54
-        ).mapIndexed { index, byte -> byte xor (index % 33 + 9) }
-            .joinToString("") { "%02x".format(it) }
-
-        val secret =
-            secretCipherBytes.toByteArray(Charsets.UTF_8).joinToString("") { "%02x".format(it) }
-
         val steps = toHexString(time / 30000).uppercase(Locale.getDefault())
 
         return TOTP.generateTOTP(
-            secret, steps, 6, "HmacSHA1"
+            SECRET, steps, 6, "HmacSHA1"
         )
     }
 
@@ -112,5 +104,15 @@ class Authentication(
         val new = createCookie()
         this.cookie = new
         return new.value
+    }
+
+    companion object {
+        private val SECRET =
+            listOf(
+                12, 56, 76, 33, 88, 44, 88, 33, 78, 78, 11, 66, 22, 22, 55, 69, 54
+            ).mapIndexed { index, byte -> byte xor (index % 33 + 9) }
+                .joinToString("") { "%02x".format(it) }
+                .toByteArray(Charsets.UTF_8)
+                .joinToString("") { "%02x".format(it) }
     }
 }
