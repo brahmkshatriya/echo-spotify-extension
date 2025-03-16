@@ -110,9 +110,9 @@ class Authentication(
         private val SECRET =
             listOf(
                 12, 56, 76, 33, 88, 44, 88, 33, 78, 78, 11, 66, 22, 22, 55, 69, 54
-            ).mapIndexed { index, byte -> byte xor (index % 33 + 9) }
-                .joinToString("") { "%02x".format(it) }
+            ).mapIndexed { index, byte -> byte xor ((index % 33) + 9) }
+                .joinToString("")
                 .toByteArray(Charsets.UTF_8)
-                .joinToString("") { "%02x".format(it) }
+                .joinToString("") { it.toUByte().toString(16) }
     }
 }
