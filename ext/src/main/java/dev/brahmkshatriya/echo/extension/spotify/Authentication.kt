@@ -28,11 +28,7 @@ class Authentication(
     private var tokenExpiration: Long = 0
 
     private suspend fun createAccessToken(): String {
-        val time = System.currentTimeMillis()
-        val totp = generateTotp(time)
-        val req = Request.Builder()
-            .url("https://open.spotify.com/get_access_token?reason=transport&productType=web-player&totp=$totp&totpVer=5&ts=${time}")
-
+        val req = Request.Builder().url(generateUrl())
         val body = client.newCall(req.build()).await().body.string()
         val response = runCatching { json.decode<TokenResponse>(body) }.getOrElse {
             throw runCatching { json.decode<ErrorMessage>(body).error }.getOrElse {
@@ -45,12 +41,42 @@ class Authentication(
         return accessToken!!
     }
 
-    private fun generateTotp(time: Long): String {
-        val steps = toHexString(time / 30000).uppercase(Locale.getDefault())
-
-        return TOTP.generateTOTP(
-            SECRET, steps, 6, "HmacSHA1"
+    private suspend fun generateUrl(): String {
+        val (serverTime, secret) = getTimeAndSecret()
+        val time = System.currentTimeMillis()
+        val totp = TOTP.generateTOTP(
+            secret, toHexString(time / 30000).uppercase(Locale.getDefault()), 6, "HmacSHA1"
         )
+        val serverTotp = TOTP.generateTOTP(
+            secret, toHexString(serverTime / 30).uppercase(Locale.getDefault()), 6, "HmacSHA1"
+        )
+        val url =
+            "https://open.spotify.com/get_access_token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=5&sTime=${serverTime}&cTime=${time}"
+        return url
+    }
+
+    private val serverTimeRegex = Regex("\"serverTime\":([^}]+)}")
+    private val playerJsRegex =
+        Regex("https://open\\.spotifycdn\\.com/cdn/build/web-player/web-player\\..{8}\\.js")
+    private val seedRegex = Regex("\\[(([0-9]{2},){16}[0-9]{2})]")
+    private suspend fun getTimeAndSecret(): Pair<Long, String> {
+        val body = client.newCall(Request.Builder().url("https://open.spotify.com/").build())
+            .await().body.string()
+        val serverTime = serverTimeRegex.find(body)?.groupValues?.get(1)?.toLongOrNull()
+            ?: throw IllegalStateException("Failed to get server time")
+        val playerJs = playerJsRegex.find(body)?.value
+            ?: throw IllegalStateException("Failed to get player js")
+        val jsBody = client.newCall(Request.Builder().url(playerJs).build()).await().body.string()
+        val seed = seedRegex.find(jsBody)?.groupValues?.get(1)?.split(",")?.map { it.toInt() }
+            ?: throw IllegalStateException("Failed to get seed")
+        return serverTime to seedToSecret(seed)
+    }
+
+    private fun seedToSecret(list: List<Int>): String {
+        return list.mapIndexed { index, byte -> byte xor ((index % 33) + 9) }
+            .joinToString("")
+            .toByteArray(Charsets.UTF_8)
+            .joinToString("") { it.toUByte().toString(16) }
     }
 
     suspend fun getToken() =
@@ -86,7 +112,6 @@ class Authentication(
         override val message: String
     ) : Exception(message)
 
-
     private var cookie: Cookie? = null
     private suspend fun createCookie(): Cookie {
         val req = Request.Builder()
@@ -104,15 +129,5 @@ class Authentication(
         val new = createCookie()
         this.cookie = new
         return new.value
-    }
-
-    companion object {
-        private val SECRET =
-            listOf(
-                12, 56, 76, 33, 88, 44, 88, 33, 78, 78, 11, 66, 22, 22, 55, 69, 54
-            ).mapIndexed { index, byte -> byte xor ((index % 33) + 9) }
-                .joinToString("")
-                .toByteArray(Charsets.UTF_8)
-                .joinToString("") { it.toUByte().toString(16) }
     }
 }

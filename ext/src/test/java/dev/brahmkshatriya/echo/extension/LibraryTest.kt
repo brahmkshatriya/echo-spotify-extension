@@ -69,7 +69,7 @@ class LibraryTest {
             is Shelf.Item -> println(this)
             is Shelf.Lists<*> -> {
                 println("${this.title} : ${this.list.size}")
-                println("More: ${this.more?.loadAll()?.size}")
+                println("More: ${this.more?.loadFirst()?.size}")
             }
         }
     }

@@ -659,7 +659,6 @@ fun Metadata4Track.toTrack(
     canvas: Streamable?
 ): Track {
     val id = "spotify:track:${Base62.encode(gid!!)}"
-    println("${id == canonicalUri} $id == $canonicalUri")
     val title = name!!
     val streamables = (file ?: alternative?.firstOrNull()?.file).orEmpty().mapNotNull {
         val url = it.fileId ?: return@mapNotNull null
