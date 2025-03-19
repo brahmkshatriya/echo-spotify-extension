@@ -55,7 +55,7 @@ class Authentication(
         return url
     }
 
-    private val serverTimeRegex = Regex("\"serverTime\":([^}]+)}")
+    private val serverTimeRegex = Regex("\"serverTime\":([^}]+)\\}")
     private val playerJsRegex =
         Regex("https://open\\.spotifycdn\\.com/cdn/build/web-player/web-player\\..{8}\\.js")
     private val seedRegex = Regex("\\[(([0-9]{2},){16}[0-9]{2})]")
