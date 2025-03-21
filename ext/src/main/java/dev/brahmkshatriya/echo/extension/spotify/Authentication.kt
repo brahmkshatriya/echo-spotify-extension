@@ -20,6 +20,7 @@ class Authentication(
         if (api.token != null) req.header("Cookie", "sp_dc=${api.token}")
         req.addHeader(userAgent.first, userAgent.second)
         req.addHeader("Accept", "application/json")
+        req.addHeader("Referer", "https://open.spotify.com/")
         it.proceed(req.build())
     }.build()
 
@@ -42,7 +43,7 @@ class Authentication(
     }
 
     private suspend fun generateUrl(): String {
-        val (serverTime, secret) = getTimeAndSecret()
+        val (serverTime, secret, buildVer, buildDate) = getTimeAndSecret()
         val time = System.currentTimeMillis()
         val totp = TOTP.generateTOTP(
             secret, toHexString(time / 30000).uppercase(Locale.getDefault()), 6, "HmacSHA1"
@@ -51,7 +52,7 @@ class Authentication(
             secret, toHexString(serverTime / 30).uppercase(Locale.getDefault()), 6, "HmacSHA1"
         )
         val url =
-            "https://open.spotify.com/get_access_token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=5&sTime=${serverTime}&cTime=${time}"
+            "https://open.spotify.com/get_access_token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=5&sTime=${serverTime}&cTime=${time}&buildVer=${buildVer}&buildDate=${buildDate}"
         return url
     }
 
@@ -59,7 +60,16 @@ class Authentication(
     private val playerJsRegex =
         Regex("https://open\\.spotifycdn\\.com/cdn/build/web-player/web-player\\..{8}\\.js")
     private val seedRegex = Regex("\\[(([0-9]{2},){16}[0-9]{2})]")
-    private suspend fun getTimeAndSecret(): Pair<Long, String> {
+    private val buildRegex = Regex("buildVer:\"([^\"]+)\",buildDate:\"([^\"]+)\"")
+
+    data class Data(
+        val serverTime: Long,
+        val seed: String,
+        val buildVer: String,
+        val buildDate: String
+    )
+
+    private suspend fun getTimeAndSecret(): Data {
         val body = client.newCall(Request.Builder().url("https://open.spotify.com/").build())
             .await().body.string()
         val serverTime = serverTimeRegex.find(body)?.groupValues?.get(1)?.toLongOrNull()
@@ -69,7 +79,9 @@ class Authentication(
         val jsBody = client.newCall(Request.Builder().url(playerJs).build()).await().body.string()
         val seed = seedRegex.find(jsBody)?.groupValues?.get(1)?.split(",")?.map { it.toInt() }
             ?: throw IllegalStateException("Failed to get seed")
-        return serverTime to seedToSecret(seed)
+        val (buildVer, buildDate) = buildRegex.find(jsBody)?.destructured
+            ?: throw IllegalStateException("Failed to get build info")
+        return Data(serverTime, seedToSecret(seed), buildVer, buildDate)
     }
 
     private fun seedToSecret(list: List<Int>): String {
