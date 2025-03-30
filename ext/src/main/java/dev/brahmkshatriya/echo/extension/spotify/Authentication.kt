@@ -10,6 +10,8 @@ import okhttp3.Request
 import java.io.IOException
 import java.lang.Long.toHexString
 import java.util.Locale
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 class Authentication(
     private val api: SpotifyApi
@@ -56,6 +58,8 @@ class Authentication(
         return url
     }
 
+    private val configRegex =
+        Regex("<script id=\"appServerConfig\" type=\"text/plain\">(.+?)</script>")
     private val serverTimeRegex = Regex("\"serverTime\":([^}]+)\\}")
     private val playerJsRegex =
         Regex("https://open\\.spotifycdn\\.com/cdn/build/web-player/web-player\\..{8}\\.js")
@@ -69,10 +73,14 @@ class Authentication(
         val buildDate: String
     )
 
+    @OptIn(ExperimentalEncodingApi::class)
     private suspend fun getTimeAndSecret(): Data {
         val body = client.newCall(Request.Builder().url("https://open.spotify.com/").build())
             .await().body.string()
-        val serverTime = serverTimeRegex.find(body)?.groupValues?.get(1)?.toLongOrNull()
+        val configB64 = configRegex.find(body)?.groupValues?.get(1)
+            ?: throw IllegalStateException("Failed to get config")
+        val config = String(Base64.decode(configB64))
+        val serverTime = serverTimeRegex.find(config)?.groupValues?.get(1)?.toLongOrNull()
             ?: throw IllegalStateException("Failed to get server time")
         val playerJs = playerJsRegex.find(body)?.value
             ?: throw IllegalStateException("Failed to get player js")
