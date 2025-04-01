@@ -69,7 +69,7 @@ class LibraryTest {
             is Shelf.Item -> println(this)
             is Shelf.Lists<*> -> {
                 println("${this.title} : ${this.list.size}")
-                println("More: ${this.more?.loadFirst()?.size}")
+                println("More: ${this.more?.loadList(null)?.data?.size}")
             }
         }
     }
@@ -80,7 +80,7 @@ class LibraryTest {
         val feed = extension.searchFeed("", tab)
         val shelves = feed.loadAll()
         val shelf = shelves.first() as Shelf.Lists.Categories
-        val load = shelf.list.first().items!!.loadFirst()
+        val load = shelf.list.first().items!!.loadList(null).data
         load.forEach { it.print() }
     }
 
@@ -113,7 +113,7 @@ class LibraryTest {
     @Test
     fun trackShelves() = testIn("Track Shelves") {
         val track = extension.loadTrack(Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", ""))
-        val shelves = extension.getShelves(track).loadFirst()
+        val shelves = extension.getShelves(track).loadList(null).data
         shelves.forEach { it.print() }
     }
 
@@ -135,7 +135,7 @@ class LibraryTest {
         println(playlist)
         val tracks = extension.loadTracks(playlist).loadAll()
         println("Tracks: ${tracks.size}")
-//        val shelves = extension.getShelves(playlist).loadFirst()
+//        val shelves = extension.getShelves(playlist).loadList(null)?.data
 //        println("Shelves: ${shelves.size}")
 //        shelves.forEach { it.print() }
     }
@@ -151,9 +151,9 @@ class LibraryTest {
             Album("spotify:album:7DVnTw8oQn2p2dD99Zps4i", "")
         )
         println(json.encodeToString(album))
-//        val tracks = extension.loadTracks(album).loadFirst()
+//        val tracks = extension.loadTracks(album).loadList(null)?.data
 //        println("Tracks: ${tracks.size}")
-//        val shelves = extension.getShelves(album).loadFirst()
+//        val shelves = extension.getShelves(album).loadList(null)?.data
 //        println("Shelves: ${shelves.size}")
 //        shelves.forEach { it.print() }
     }
@@ -185,7 +185,7 @@ class LibraryTest {
             Artist("spotify:artist:3mVL1qynaYs31rgyDTytkS", "")
         )
         println(artist)
-        val shelves = extension.getShelves(artist).loadFirst()
+        val shelves = extension.getShelves(artist).loadList(null).data
         println("Shelves: ${shelves.size}")
         shelves.forEach { it.print() }
     }
@@ -196,7 +196,7 @@ class LibraryTest {
             Artist("spotify:user:aeivypek9coyo5quqvlgn4x3g", "")
         )
         println(user)
-        val shelves = extension.getShelves(user).loadFirst()
+        val shelves = extension.getShelves(user).loadList(null).data
         println("Shelves: ${shelves.size}")
         shelves.forEach { it.print() }
     }
@@ -228,7 +228,8 @@ class LibraryTest {
 
     @Test
     fun editablePlaylist() = testIn("Editable Playlist Test") {
-        val playlists = extension.listEditablePlaylists()
+        val track = Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", "")
+        val playlists = extension.listEditablePlaylists(track)
         playlists.forEach {
             println(it)
         }
@@ -240,9 +241,9 @@ class LibraryTest {
         println(playlist)
         extension.editPlaylistMetadata(playlist, "bruhduish", null)
         println(extension.loadPlaylist(playlist))
-        println("Playlists: ${extension.listEditablePlaylists().size}")
+        println("Playlists: ${extension.listEditablePlaylists(null).size}")
         extension.deletePlaylist(playlist)
-        println("Playlists: ${extension.listEditablePlaylists().size}")
+        println("Playlists: ${extension.listEditablePlaylists(null).size}")
     }
 
     @Test

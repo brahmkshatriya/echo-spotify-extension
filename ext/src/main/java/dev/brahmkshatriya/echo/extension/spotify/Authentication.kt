@@ -7,7 +7,6 @@ import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.IOException
 import java.lang.Long.toHexString
 import java.util.Locale
 import kotlin.io.encoding.Base64
@@ -35,7 +34,7 @@ class Authentication(
         val body = client.newCall(req.build()).await().body.string()
         val response = runCatching { json.decode<TokenResponse>(body) }.getOrElse {
             throw runCatching { json.decode<ErrorMessage>(body).error }.getOrElse {
-                IOException(body)
+                Exception(body)
             }
         }
         clientId = response.clientId

@@ -55,6 +55,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     TrackClient, TrackLikeClient, TrackHideClient, RadioClient, SaveToLibraryClient,
     AlbumClient, PlaylistClient, ArtistClient, ArtistFollowClient, PlaylistEditClient {
 
+    override suspend fun onExtensionSelected() {}
     override val settingItems: List<Setting> = emptyList()
 
     private lateinit var setting: Settings
@@ -384,8 +385,8 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         queries.editPlaylistMetadata(id, title, description).raw
     }
 
-    override suspend fun listEditablePlaylists(): List<Playlist> {
-        return editablePlaylists(queries).loadAll().map { it.copy(isEditable = true) }
+    override suspend fun listEditablePlaylists(track: Track?): List<Pair<Playlist, Boolean>> {
+        return editablePlaylists(queries, track?.id).loadAll()
     }
 
     override fun getShelves(playlist: Playlist): PagedData<Shelf> = PagedData.Single {

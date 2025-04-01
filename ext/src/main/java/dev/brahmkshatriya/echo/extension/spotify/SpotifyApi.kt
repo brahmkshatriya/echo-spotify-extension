@@ -3,7 +3,6 @@ package dev.brahmkshatriya.echo.extension.spotify
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.io.IOException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -118,7 +117,7 @@ class SpotifyApi(
         }
         val response = callGetBody(request)
         return if (response.startsWith('{')) response else {
-            throw IOException("Invalid response: $response")
+            throw Exception("Invalid response: $response")
         }
     }
 
@@ -142,7 +141,7 @@ class SpotifyApi(
         if (ignore || res.commonIsSuccessful) res.body.string()
         else {
             res.closeQuietly()
-            throw IOException("${res.code}: Failed to call - ${req.url}")
+            throw Exception("${res.code}: Failed to call - ${req.url}")
         }
     }
 

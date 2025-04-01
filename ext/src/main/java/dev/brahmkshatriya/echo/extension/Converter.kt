@@ -772,18 +772,32 @@ fun LibraryV3.Item.toShelf(queries: Queries): Shelf? {
     } else item?.data?.toMediaItem()?.toShelf()
 }
 
-fun editablePlaylists(queries: Queries, folderUri: String? = null): PagedData<Playlist> =
+fun editablePlaylists(
+    queries: Queries,
+    track: String?,
+    folderUri: String? = null
+): PagedData<Pair<Playlist, Boolean>> =
     paged { offset ->
         val res = queries.editablePlaylists(
-            offset, folderUri, "spotify:track:3z5lNLYtGC6LmvrxSbCQgd"
+            offset, folderUri, track ?: "spotify:track:3z5lNLYtGC6LmvrxSbCQgd"
         ).json.data.me.editablePlaylists!!
         val playlists = res.items.mapNotNull {
             when (val item = it.item.data) {
-                is Item.PseudoPlaylist -> listOfNotNull(item.toPlaylist())
-                is Item.Playlist -> listOfNotNull(item.toPlaylist())
+                is Item.PseudoPlaylist -> {
+                    val curated = it.curates ?: return@mapNotNull null
+                    val playlist = item.toPlaylist() ?: return@mapNotNull null
+                    listOfNotNull(playlist to curated)
+                }
+
+                is Item.Playlist -> {
+                    val curated = it.curates ?: return@mapNotNull null
+                    val playlist = item.toPlaylist() ?: return@mapNotNull null
+                    listOfNotNull(playlist to curated)
+                }
+
                 is Item.Folder -> {
                     val uri = item.uri ?: return@mapNotNull null
-                    editablePlaylists(queries, uri).loadAll()
+                    editablePlaylists(queries, track, uri).loadAll()
                 }
 
                 else -> null
