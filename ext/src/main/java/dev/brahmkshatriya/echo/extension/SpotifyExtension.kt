@@ -78,8 +78,9 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     override val loginWebViewStopUrlRegex =
         Regex("(https://accounts\\.spotify\\.com/en/status)|(https://open\\.spotify\\.com)")
 
-    override suspend fun onLoginWebviewStop(url: String, data: String): List<User> {
-        val parsed = data.split(";").mapNotNull {
+    override suspend fun onLoginWebviewStop(url: String, data: Map<String, String>): List<User> {
+        val cookie = data.values.first()
+        val parsed = cookie.split(";").mapNotNull {
             if (it.isBlank()) null else HttpCookie.parse(it).firstOrNull()
         }
         val token = parsed.find { it.name == "sp_dc" } ?: throw Exception("Token not found")

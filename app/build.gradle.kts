@@ -1,5 +1,3 @@
-import java.io.ByteArrayOutputStream
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -31,10 +29,10 @@ val verCode = gitCount
 val verName = gitHash
 
 tasks.register("uninstall") {
-    exec {
-        isIgnoreExitValue = true
-        executable(android.adbExecutable)
-        args("shell", "pm", "uninstall", android.defaultConfig.applicationId!!)
+    android.run {
+        execute(
+            adbExecutable.absolutePath, "shell", "pm", "uninstall", defaultConfig.applicationId!!
+        )
     }
 }
 
@@ -77,13 +75,18 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17.toString()
+    }
 }
 
 fun execute(vararg command: String): String {
-    val outputStream = ByteArrayOutputStream()
-    project.exec {
-        commandLine(*command)
-        standardOutput = outputStream
-    }
-    return outputStream.toString().trim()
+    val processBuilder = ProcessBuilder(*command)
+    val hashCode = command.joinToString().hashCode().toString()
+    val output = File.createTempFile(hashCode, "")
+    processBuilder.redirectOutput(output)
+    val process = processBuilder.start()
+    process.waitFor()
+    return output.readText().dropLast(1)
 }

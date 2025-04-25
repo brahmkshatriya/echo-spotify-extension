@@ -1,2 +1,4 @@
--keep class dev.brahmkshatriya.echo.** { *; }
--dontwarn kotlin.uuid.Uuid$Companion
+-keep class kotlin.** { *; }
+-keep class kotlinx.** { *; }
+-keep class dev.brahmkshatriya.echo.common.* { *; }
+-keep class dev.brahmkshatriya.echo.extension.SpotifyExtension

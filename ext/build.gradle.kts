@@ -1,5 +1,4 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import java.io.ByteArrayOutputStream
 
 plugins {
     id("java-library")
@@ -23,7 +22,7 @@ dependencies {
     compileOnly("com.github.brahmkshatriya:echo:$libVersion")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation("com.github.brahmkshatriya:echo:$libVersion")
 }
 
@@ -90,10 +89,11 @@ tasks {
 }
 
 fun execute(vararg command: String): String {
-    val outputStream = ByteArrayOutputStream()
-    project.exec {
-        commandLine(*command)
-        standardOutput = outputStream
-    }
-    return outputStream.toString().trim()
+    val processBuilder = ProcessBuilder(*command)
+    val hashCode = command.joinToString().hashCode().toString()
+    val output = File.createTempFile(hashCode, "")
+    processBuilder.redirectOutput(output)
+    val process = processBuilder.start()
+    process.waitFor()
+    return output.readText().dropLast(1)
 }
