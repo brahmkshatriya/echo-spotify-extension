@@ -48,7 +48,7 @@ import dev.brahmkshatriya.echo.extension.spotify.models.Item
 import dev.brahmkshatriya.echo.extension.spotify.models.UserProfileView
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import java.net.HttpCookie
+import java.net.URLDecoder
 
 class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     SearchFeedClient, HomeFeedClient, LibraryFeedClient, LyricsClient, ShareClient,
@@ -63,9 +63,9 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         setting = settings
     }
 
-    val api by lazy {
+    private val api by lazy {
         SpotifyApi {
-            val token = token
+            val token = cookie
             if (it.code == 401 && token != null) throw ClientException.Unauthorized(token)
             else throw it
         }
@@ -78,33 +78,36 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     override val loginWebViewStopUrlRegex =
         Regex("(https://accounts\\.spotify\\.com/en/status)|(https://open\\.spotify\\.com)")
 
+    private val emailRegex = Regex("remember=([^;]+)")
+
     override suspend fun onLoginWebviewStop(url: String, data: Map<String, String>): List<User> {
         val cookie = data.values.first()
-        val parsed = cookie.split(";").mapNotNull {
-            if (it.isBlank()) null else HttpCookie.parse(it).firstOrNull()
+        if (!cookie.contains("sp_dc")) throw Exception("Token not found")
+        api.setCookie(cookie)
+        val email = emailRegex.find(cookie)?.groups?.get(1)?.value?.let {
+            URLDecoder.decode(it, "UTF-8")
         }
-        val token = parsed.find { it.name == "sp_dc" } ?: throw Exception("Token not found")
-        api.setToken(token.value)
-        val user = getCurrentUser()!!.copy(id = token.value)
+        val user = queries.profileAttributes().json.toUser()
+            .copy(extras = mapOf("cookie" to cookie), subtitle = email)
         return listOf(user)
     }
 
     override suspend fun onSetLoginUser(user: User?) {
-        api.setToken(user?.id)
+        val cookie = if (user == null) null
+        else user.extras["cookie"] ?: throw ClientException.Unauthorized(user.id)
+        api.setCookie(cookie)
         this.user = null
         this.product = null
     }
 
     private var user: User? = null
     override suspend fun getCurrentUser(): User? {
-        if (user == null)
-            user = if (api.token == null) null else queries.profileAttributes().json.toUser()
-        return user
+        return user?.copy(extras = mapOf())
     }
 
     private var product: AccountAttributes.Product? = null
     private suspend fun hasPremium(): Boolean {
-        if (api.token == null) return false
+        if (api.cookie == null) return false
         if (product == null) product = queries.accountAttributes().json.data.me.account.product
         return product != AccountAttributes.Product.FREE
     }
@@ -198,7 +201,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     ): Streamable.Media {
         return when (streamable.type) {
             Streamable.MediaType.Server -> {
-                api.token ?: throw ClientException.LoginRequired()
+                api.cookie ?: throw ClientException.LoginRequired()
                 val accessToken = api.getAccessToken()
                 val url = queries.storageResolve(streamable.id).json.cdnUrl.first()
                 val time = "time=${System.currentTimeMillis()}"
@@ -318,7 +321,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         tracks: List<Track>,
         indexes: List<Int>
     ) {
-        if (api.token == null) throw ClientException.LoginRequired()
+        if (api.cookie == null) throw ClientException.LoginRequired()
         when (val type = playlist.id.substringAfter(":").substringBefore(":")) {
             "playlist" -> {
                 val uids = indexes.map { tracks[it].extras["uid"]!! }.toTypedArray()
@@ -340,7 +343,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
         index: Int,
         new: List<Track>
     ) {
-        if (api.token == null) throw ClientException.LoginRequired()
+        if (api.cookie == null) throw ClientException.LoginRequired()
         when (val type = playlist.id.substringAfter(":").substringBefore(":")) {
             "playlist" -> {
                 val uris = new.map { it.id }.toTypedArray()
@@ -359,7 +362,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     }
 
     override suspend fun createPlaylist(title: String, description: String?): Playlist {
-        if (api.token == null) throw ClientException.LoginRequired()
+        if (api.cookie == null) throw ClientException.LoginRequired()
         val uri = queries.createPlaylist(title, description).json.uri
         val userId = getCurrentUser()!!.id.substringAfter("spotify:user:")
         queries.playlistToLibrary(userId, uri)
@@ -367,7 +370,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     }
 
     private fun getPlaylistId(playlist: Playlist): String {
-        if (api.token == null) throw ClientException.LoginRequired()
+        if (api.cookie == null) throw ClientException.LoginRequired()
         if (!playlist.id.startsWith("spotify:playlist:"))
             throw ClientException.NotSupported("Unsupported playlist type: ${playlist.id}")
         return playlist.id.substringAfter("spotify:playlist:")
@@ -430,7 +433,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     }
 
     override suspend fun getHomeTabs(): List<Tab> {
-        if (api.token == null) return emptyList()
+        if (api.cookie == null) return emptyList()
         val all = listOf(Tab("", "All"))
         return all + queries.homeFeedChips().json.data?.home?.homeChips?.toTabs()!!
     }
@@ -453,7 +456,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     }
 
     override fun getLibraryFeed(tab: Tab?): PagedData<Shelf> {
-        if (api.token == null) throw ClientException.LoginRequired()
+        if (api.cookie == null) throw ClientException.LoginRequired()
         return when (tab?.id) {
             "All", null -> pagedLibrary(queries)
             "You" -> PagedData.Single {
@@ -484,21 +487,21 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     }
 
     override suspend fun getLibraryTabs(): List<Tab> {
-        if (api.token == null) return emptyList()
+        if (api.cookie == null) return emptyList()
         val filters = queries.libraryV3(0).json.data?.me?.libraryV3?.availableFilters
             ?.mapNotNull { it.name }.orEmpty()
         return (listOf("All", "You") + filters).map { Tab(it, it) }
     }
 
     override suspend fun isSavedToLibrary(mediaItem: EchoMediaItem): Boolean {
-        if (api.token == null) return false
+        if (api.cookie == null) return false
         val isSaved = queries.areEntitiesInLibrary(mediaItem.id)
             .json.data?.lookup?.firstOrNull()?.data?.saved
         return isSaved ?: false
     }
 
     override suspend fun saveToLibrary(mediaItem: EchoMediaItem, save: Boolean) {
-        if (api.token == null) throw ClientException.LoginRequired()
+        if (api.cookie == null) throw ClientException.LoginRequired()
         if (save) queries.addToLibrary(mediaItem.id)
         else queries.removeFromLibrary(mediaItem.id)
     }
@@ -513,7 +516,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     }
 
     override suspend fun followArtist(artist: Artist, follow: Boolean) {
-        if (api.token == null) throw ClientException.LoginRequired()
+        if (api.cookie == null) throw ClientException.LoginRequired()
         when (val type = artist.id.substringAfter(":").substringBefore(":")) {
             "artist" -> {
                 if (follow) queries.addToLibrary(artist.id)

@@ -18,7 +18,8 @@ class Authentication(
     private val json = Json()
     private val client = OkHttpClient.Builder().addInterceptor {
         val req = it.request().newBuilder()
-        if (api.token != null) req.header("Cookie", "sp_dc=${api.token}")
+        val cookie = api.cookie
+        if (cookie != null) req.header("Cookie", cookie)
         req.addHeader(userAgent.first, userAgent.second)
         req.addHeader("Accept", "application/json")
         req.addHeader("Referer", "https://open.spotify.com/")

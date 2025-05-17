@@ -19,13 +19,13 @@ class SpotifyApi(
     val onError: SpotifyApi.(Authentication.Error) -> Unit
 ) {
 
-    val token get() = _token
+    val cookie get() = _cookie
 
     private val authMutex = Mutex()
-    val auth = Authentication(this)
-    private var _token: String? = null
-    suspend fun setToken(token: String?) {
-        _token = token
+    private val auth = Authentication(this)
+    private var _cookie: String? = null
+    suspend fun setCookie(cookie: String?) {
+        _cookie = cookie
         authMutex.withLock { auth.clear() }
     }
 
@@ -151,6 +151,6 @@ class SpotifyApi(
 
     companion object {
         val userAgent =
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
     }
 }

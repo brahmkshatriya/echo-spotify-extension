@@ -31,8 +31,8 @@ class LibraryTest {
     private val extension = SpotifyExtension()
 
     private val mainThreadSurrogate = newSingleThreadContext("UI thread")
-    private val token = System.getenv("SPOTIFY_TOKEN")!!
-    private val user = User(token, "")
+    private val cookie = System.getenv("SPOTIFY_COOKIE")!!
+    private val user = User("", "", extras = mapOf("cookie" to cookie))
 
     @Before
     fun setUp() {
@@ -60,7 +60,7 @@ class LibraryTest {
     fun testCurrentUser() = testIn("Testing current user") {
         val user = extension.getCurrentUser()
         println(user)
-        println(extension.queries.metadata4Track("9ddc535dfd344ebbb280514a0d7dc5c3"))
+        println(extension.queries.metadata4Track("0rVjrie60R2vHEla6eVTOj"))
     }
 
     private suspend fun Shelf.print() {
