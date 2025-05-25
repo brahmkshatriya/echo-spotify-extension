@@ -19,6 +19,7 @@ import dev.brahmkshatriya.echo.common.clients.TrackHideClient
 import dev.brahmkshatriya.echo.common.clients.TrackLikeClient
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.helpers.PagedData
+import dev.brahmkshatriya.echo.common.helpers.WebViewRequest
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
@@ -29,6 +30,7 @@ import dev.brahmkshatriya.echo.common.models.Lyrics
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.QuickSearchItem
 import dev.brahmkshatriya.echo.common.models.Radio
+import dev.brahmkshatriya.echo.common.models.Request
 import dev.brahmkshatriya.echo.common.models.Request.Companion.toRequest
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Streamable
@@ -50,7 +52,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.net.URLDecoder
 
-class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
+class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     SearchFeedClient, HomeFeedClient, LibraryFeedClient, LyricsClient, ShareClient,
     TrackClient, TrackLikeClient, TrackHideClient, RadioClient, SaveToLibraryClient,
     AlbumClient, PlaylistClient, ArtistClient, ArtistFollowClient, PlaylistEditClient {
@@ -72,24 +74,23 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView.Cookie,
     }
     val queries by lazy { Queries(api) }
 
-    override val loginWebViewInitialUrl =
-        "https://accounts.spotify.com/en/login".toRequest(mapOf(userAgent))
+    override val webViewRequest = object : WebViewRequest.Cookie<List<User>> {
+        override val initialUrl =
+            "https://accounts.spotify.com/en/login".toRequest(mapOf(userAgent))
+        override val stopUrlRegex =
+            Regex("(https://accounts\\.spotify\\.com/en/status)|(https://open\\.spotify\\.com)")
 
-    override val loginWebViewStopUrlRegex =
-        Regex("(https://accounts\\.spotify\\.com/en/status)|(https://open\\.spotify\\.com)")
-
-    private val emailRegex = Regex("remember=([^;]+)")
-
-    override suspend fun onLoginWebviewStop(url: String, data: Map<String, String>): List<User> {
-        val cookie = data.values.first()
-        if (!cookie.contains("sp_dc")) throw Exception("Token not found")
-        api.setCookie(cookie)
-        val email = emailRegex.find(cookie)?.groups?.get(1)?.value?.let {
-            URLDecoder.decode(it, "UTF-8")
+        val emailRegex = Regex("remember=([^;]+)")
+        override suspend fun onStop(url: Request, cookie: String): List<User> {
+            if (!cookie.contains("sp_dc")) throw Exception("Token not found")
+            api.setCookie(cookie)
+            val email = emailRegex.find(cookie)?.groups?.get(1)?.value?.let {
+                URLDecoder.decode(it, "UTF-8")
+            }
+            val user = queries.profileAttributes().json.toUser()
+                .copy(extras = mapOf("cookie" to cookie), subtitle = email)
+            return listOf(user)
         }
-        val user = queries.profileAttributes().json.toUser()
-            .copy(extras = mapOf("cookie" to cookie), subtitle = email)
-        return listOf(user)
     }
 
     override suspend fun onSetLoginUser(user: User?) {
