@@ -33,13 +33,13 @@ jobs:
 
       - name: Build with Gradle
         run: |
-          ./gradlew assembleDebug \
+          ./gradlew assembleRelease \
           -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/signing-key.jks \
           -Pandroid.injected.signing.store.password=${{ secrets.PASSWORD }} \
           -Pandroid.injected.signing.key.alias=key0 \
           -Pandroid.injected.signing.key.password=${{ secrets.PASSWORD }}
           
-          cp app/build/outputs/apk/debug/app-debug.apk ${{ env.APP_PATH }}
+          cp app/build/outputs/apk/release/app-release.apk ${{ env.APP_PATH }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
