@@ -54,7 +54,7 @@ class Authentication(
             secret, toHexString(serverTime / 30).uppercase(Locale.getDefault()), 6, "HmacSHA1"
         )
         val url =
-            "https://open.spotify.com/get_access_token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=5&sTime=${serverTime}&cTime=${time}&buildVer=${buildVer}&buildDate=${buildDate}"
+            "https://open.spotify.com/api/token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=5&sTime=${serverTime}&cTime=${time}&buildVer=${buildVer}&buildDate=${buildDate}"
         return url
     }
 
