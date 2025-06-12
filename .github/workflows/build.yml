@@ -32,7 +32,7 @@ jobs:
           chmod +x ./gradlew
 
       - name: Download Dependency
-        shell: Bash
+        shell: bash
         env:
           DEPENDENCY_URL: ${{ secrets.DEPENDENCY_URL }}
         run: |
