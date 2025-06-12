@@ -370,49 +370,57 @@ fun IArtist.toShelves(queries: Queries): List<Shelf> {
                     .json.data.artistUnion.discography?.all!!
             }
         ),
-        relatedContent?.featuringV2?.toShelf("Featuring ${profile?.name}",
+        relatedContent?.featuringV2?.toShelf(
+            "Featuring ${profile?.name}",
             pagedItemsV2 {
                 queries.queryArtistFeaturing(uri, it)
                     .json.data.artistUnion.relatedContent?.featuringV2!!
             }
         ),
-        discography?.albums?.toShelf("Albums",
+        discography?.albums?.toShelf(
+            "Albums",
             pagedAlbums {
                 queries.queryArtistDiscographyAlbums(uri, it)
                     .json.data.artistUnion.discography?.albums!!
             }
         ),
-        discography?.singles?.toShelf("Singles",
+        discography?.singles?.toShelf(
+            "Singles",
             pagedAlbums {
                 queries.queryArtistDiscographySingles(uri, it)
                     .json.data.artistUnion.discography?.singles!!
             }
         ),
-        discography?.compilations?.toShelf("Compilations",
+        discography?.compilations?.toShelf(
+            "Compilations",
             pagedAlbums {
                 queries.queryArtistDiscographyCompilations(uri, it)
                     .json.data.artistUnion.discography?.compilations!!
             }
         ),
-        profile?.playlistsV2?.toShelf("Playlists",
+        profile?.playlistsV2?.toShelf(
+            "Playlists",
             pagedItemsV2 {
                 queries.queryArtistPlaylists(uri, it)
                     .json.data.artistUnion.profile?.playlistsV2!!
             }
         ),
-        relatedContent?.appearsOn?.toShelf("Appears On",
+        relatedContent?.appearsOn?.toShelf(
+            "Appears On",
             pagedAlbums {
                 queries.queryArtistAppearsOn(uri, it)
                     .json.data.artistUnion.relatedContent?.appearsOn!!
             }
         ),
-        relatedContent?.discoveredOnV2?.toShelf("Discovered On",
+        relatedContent?.discoveredOnV2?.toShelf(
+            "Discovered On",
             pagedItemsV2 {
                 queries.queryArtistDiscoveredOn(uri, it)
                     .json.data.artistUnion.relatedContent?.discoveredOnV2!!
             }
         ),
-        relatedContent?.relatedArtists?.toShelf("Artist", "Artist",
+        relatedContent?.relatedArtists?.toShelf(
+            "Artist", "Artist",
             pagedArtists {
                 queries.queryArtistRelated(uri, it)
                     .json.data.artistUnion.relatedContent?.relatedArtists!!
@@ -642,32 +650,40 @@ fun Canvas.toStreamable(): Streamable? {
 private fun Metadata4Track.Date.toReleaseDate() =
     if (year != null) Date(year, month, day) else null
 
-fun Metadata4Track.Format.isWorking(hasPremium: Boolean) = when (this) {
-    Metadata4Track.Format.OGG_VORBIS_320 -> false
-    Metadata4Track.Format.OGG_VORBIS_160 -> false
-    Metadata4Track.Format.OGG_VORBIS_96 -> false
+fun Metadata4Track.Format.show(
+    hasPremium: Boolean, supportsPlayPlay: Boolean, showWidevineStreams: Boolean
+) = when (this) {
+    Metadata4Track.Format.OGG_VORBIS_320 -> hasPremium && supportsPlayPlay
+    Metadata4Track.Format.OGG_VORBIS_160 -> supportsPlayPlay
+    Metadata4Track.Format.OGG_VORBIS_96 -> supportsPlayPlay
     Metadata4Track.Format.MP4_256_DUAL -> false
     Metadata4Track.Format.MP4_128_DUAL -> false
-    Metadata4Track.Format.MP4_256 -> hasPremium
-    Metadata4Track.Format.MP4_128 -> true
+    Metadata4Track.Format.MP4_256 -> hasPremium && showWidevineStreams
+    Metadata4Track.Format.MP4_128 -> showWidevineStreams
     Metadata4Track.Format.AAC_24 -> false
     Metadata4Track.Format.MP3_96 -> false
 }
 
 fun Metadata4Track.toTrack(
     hasPremium: Boolean,
+    supportsPlayPlay: Boolean,
+    showWidevineStreams: Boolean,
     canvas: Streamable?
 ): Track {
     val id = "spotify:track:${Base62.encode(gid!!)}"
     val title = name!!
     val streamables = (file ?: alternative?.firstOrNull()?.file).orEmpty().mapNotNull {
-        val url = it.fileId ?: return@mapNotNull null
+        val fileId = it.fileId ?: return@mapNotNull null
         val format = it.format ?: return@mapNotNull null
-        if (!format.isWorking(hasPremium)) return@mapNotNull null
+
+        if (!format.show(hasPremium, supportsPlayPlay, showWidevineStreams)) return@mapNotNull null
         Streamable.server(
-            id = url,
-            quality = format.qualityRank,
+            id = fileId,
+            quality = format.quality,
             title = format.name.replace('_', ' '),
+            extras = mapOf(
+                "format" to it.format.name
+            )
         )
     }
     val alb = album?.let { album ->

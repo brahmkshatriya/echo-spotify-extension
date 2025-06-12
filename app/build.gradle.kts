@@ -8,11 +8,12 @@ dependencies {
     val libVersion: String by project
     compileOnly("com.github.brahmkshatriya:echo:$libVersion")
     compileOnly("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
+    implementation(files("libs/unplayplay.aar"))
 }
 
 val extType: String by project
 val extId: String by project
-val extClass: String by project
+val extClass = "ADSpotifyExtension"
 
 val extIconUrl: String? by project
 val extName: String by project
@@ -27,7 +28,7 @@ val extUpdateUrl: String? by project
 val gitHash = execute("git", "rev-parse", "HEAD").take(7)
 val gitCount = execute("git", "rev-list", "--count", "HEAD").toInt()
 val verCode = gitCount
-val verName = gitHash
+val verName = "v$gitHash"
 
 tasks.register("uninstall") {
     android.run {
@@ -35,6 +36,22 @@ tasks.register("uninstall") {
             adbExecutable.absolutePath, "shell", "pm", "uninstall", defaultConfig.applicationId!!
         )
     }
+}
+
+val outputDir = file("${layout.buildDirectory.asFile.get()}/generated/proguard")
+val generatedProguard = file("${outputDir}/generated-rules.pro")
+
+tasks.register("generateProguardRules") {
+    doLast {
+        outputDir.mkdirs()
+        generatedProguard.writeText(
+            "-dontobfuscate\n-keep,allowoptimization class dev.brahmkshatriya.echo.extension.$extClass"
+        )
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn("generateProguardRules")
 }
 
 android {
@@ -48,8 +65,8 @@ android {
         manifestPlaceholders.apply {
             put("type", "dev.brahmkshatriya.echo.${extType}")
             put("id", extId)
-            put("class_path", "dev.brahmkshatriya.echo.extension.${extClass}")
-            put("version", "v$verName")
+            put("class_path", "dev.brahmkshatriya.echo.extension.$extClass")
+            put("version", verName)
             put("version_code", verCode.toString())
             put("icon_url", extIconUrl ?: "")
             put("app_name", "Echo : $extName Extension")
@@ -67,7 +84,7 @@ android {
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                generatedProguard.absolutePath
             )
         }
     }

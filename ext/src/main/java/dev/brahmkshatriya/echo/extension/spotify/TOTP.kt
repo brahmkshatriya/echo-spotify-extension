@@ -3,7 +3,6 @@ package dev.brahmkshatriya.echo.extension.spotify
 import java.lang.reflect.UndeclaredThrowableException
 import java.math.BigInteger
 import java.security.GeneralSecurityException
-import java.util.Locale
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -31,7 +30,7 @@ object TOTP {
         intArrayOf(1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000)
 
     fun generateTOTP(
-        key: String, time: String, returnDigits: Int = 6, crypto: String
+        key: String, time: String, returnDigits: Int = 6, crypto: String = "HmacSHA1"
     ): String {
         val t = time.padStart(16, '0')
         val msg = hexToBytes(t)

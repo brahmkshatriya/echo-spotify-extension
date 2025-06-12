@@ -6,6 +6,7 @@ plugins {
     id("maven-publish")
     kotlin("plugin.serialization") version "1.9.22"
     id("com.gradleup.shadow") version "8.3.0"
+    id("com.google.protobuf")
 }
 
 java {
@@ -21,6 +22,8 @@ dependencies {
     val libVersion: String by project
     compileOnly("com.github.brahmkshatriya:echo:$libVersion")
     compileOnly("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
+
+    implementation("com.google.protobuf:protobuf-java:3.22.3")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")

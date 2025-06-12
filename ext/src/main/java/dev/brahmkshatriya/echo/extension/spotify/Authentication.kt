@@ -2,13 +2,13 @@ package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import okhttp3.Cookie
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.lang.Long.toHexString
-import java.util.Locale
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -16,46 +16,57 @@ class Authentication(
     private val api: SpotifyApi
 ) {
     private val json = Json()
-    private val client = OkHttpClient.Builder().addInterceptor {
+    private val httpClient = OkHttpClient.Builder().addInterceptor {
         val req = it.request().newBuilder()
         val cookie = api.cookie
-        if (cookie != null) req.header("Cookie", cookie)
+        if (cookie != null) req.addHeader("Cookie", cookie)
         req.addHeader(userAgent.first, userAgent.second)
         req.addHeader("Accept", "application/json")
         req.addHeader("Referer", "https://open.spotify.com/")
         it.proceed(req.build())
     }.build()
 
-    private var clientId: String? = null
     var accessToken: String? = null
     private var tokenExpiration: Long = 0
+    var clientToken: String? = null
+    private var spT: String? = null
 
     private suspend fun createAccessToken(): String {
-        val req = Request.Builder().url(generateUrl())
-        val body = client.newCall(req.build()).await().body.string()
+        val (url, clientVersion, clientId) = getUrlAndClient()
+        val req = Request.Builder().url(url)
+        val body = httpClient.newCall(req.build()).await().body.string()
         val response = runCatching { json.decode<TokenResponse>(body) }.getOrElse {
             throw runCatching { json.decode<ErrorMessage>(body).error }.getOrElse {
                 Exception(body)
             }
         }
-        clientId = response.clientId
+        val deviceId = response.clientId
+        val postData =
+            """{"client_data":{"client_version":"$clientVersion","client_id":"$clientId","js_sdk_data":{"device_brand":"unknown","device_model":"unknown","os":"windows","os_version":"NT 10.0","device_id":"$deviceId","device_type":"computer"}}}"""
+                .toByteArray()
+        val clientTokenUrl = Request.Builder()
+            .url("https://clienttoken.spotify.com/v1/clienttoken")
+            .post(
+                postData.toRequestBody("application/json".toMediaType(), 0, postData.size)
+            ).build()
+
+        val clientTokenResponse = httpClient.newCall(clientTokenUrl).await().body.string()
+        clientToken = json.decode<ClientTokenResponse>(clientTokenResponse).grantedToken.token
+
         accessToken = response.accessToken
         tokenExpiration = response.accessTokenExpirationTimestampMs - 5 * 60 * 1000
         return accessToken!!
     }
 
-    private suspend fun generateUrl(): String {
-        val (serverTime, secret, buildVer, buildDate) = getTimeAndSecret()
+    @OptIn(ExperimentalStdlibApi::class)
+    private suspend fun getUrlAndClient(): Triple<String, String, String> {
+        val (serverTime, secret, buildVer, buildDate, clientId, clientVersion) = getDataFromSite()
         val time = System.currentTimeMillis()
-        val totp = TOTP.generateTOTP(
-            secret, toHexString(time / 30000).uppercase(Locale.getDefault()), 6, "HmacSHA1"
-        )
-        val serverTotp = TOTP.generateTOTP(
-            secret, toHexString(serverTime / 30).uppercase(Locale.getDefault()), 6, "HmacSHA1"
-        )
+        val totp = TOTP.generateTOTP(secret, (time / 30000).toHexString().uppercase())
+        val serverTotp = TOTP.generateTOTP(secret, (serverTime / 30).toHexString().uppercase())
         val url =
             "https://open.spotify.com/api/token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=5&sTime=${serverTime}&cTime=${time}&buildVer=${buildVer}&buildDate=${buildDate}"
-        return url
+        return Triple(url, clientVersion, clientId)
     }
 
     private val configRegex =
@@ -65,31 +76,51 @@ class Authentication(
         Regex("https://open\\.spotifycdn\\.com/cdn/build/web-player/web-player\\..{8}\\.js")
     private val seedRegex = Regex("\\[(([0-9]{2},){16}[0-9]{2})]")
     private val buildRegex = Regex("buildVer:\"([^\"]+)\",buildDate:\"([^\"]+)\"")
+    private val clientVersionRegex = Regex(",clientId:\"(.{32})\",clientVersion:\"(.*)\",product")
 
     data class Data(
         val serverTime: Long,
         val seed: String,
         val buildVer: String,
-        val buildDate: String
+        val buildDate: String,
+        val clientId: String,
+        val clientVersion: String
     )
 
     @OptIn(ExperimentalEncodingApi::class)
-    private suspend fun getTimeAndSecret(): Data {
-        val body = client.newCall(Request.Builder().url("https://open.spotify.com/").build())
-            .await().body.string()
+    private suspend fun getDataFromSite(): Data {
+        val res = httpClient.newCall(Request.Builder().url("https://open.spotify.com/").build())
+            .await()
+        val body = res.body.string()
         val configB64 = configRegex.find(body)?.groupValues?.get(1)
-            ?: throw IllegalStateException("Failed to get config")
+            ?: throw IllegalStateException("Account Suspended, please check your mail and click on \"Contact Support\" button.\n(Failed to get config)")
         val config = String(Base64.decode(configB64))
         val serverTime = serverTimeRegex.find(config)?.groupValues?.get(1)?.toLongOrNull()
             ?: throw IllegalStateException("Failed to get server time")
         val playerJs = playerJsRegex.find(body)?.value
             ?: throw IllegalStateException("Failed to get player js")
-        val jsBody = client.newCall(Request.Builder().url(playerJs).build()).await().body.string()
+        spT = res.headers("Set-Cookie")
+            .firstOrNull { it.startsWith("sp_t=") }
+            ?.substringAfter("sp_t=")
+            ?.substringBefore(";")
+
+        val file = File(api.cacheDir.absolutePath, "${playerJs.hashCode()}")
+        val jsBody = if (file.exists()) file.readText() else {
+            file.parentFile.deleteRecursively()
+            file.parentFile.mkdirs()
+            val js =
+                httpClient.newCall(Request.Builder().url(playerJs).build()).await().body.string()
+            file.writeText(js)
+            js
+        }
         val seed = seedRegex.find(jsBody)?.groupValues?.get(1)?.split(",")?.map { it.toInt() }
             ?: throw IllegalStateException("Failed to get seed")
         val (buildVer, buildDate) = buildRegex.find(jsBody)?.destructured
             ?: throw IllegalStateException("Failed to get build info")
-        return Data(serverTime, seedToSecret(seed), buildVer, buildDate)
+        val (client, clientVersion) = clientVersionRegex.find(jsBody)?.destructured
+            ?: throw IllegalStateException("Failed to get client version")
+
+        return Data(serverTime, seedToSecret(seed), buildVer, buildDate, client, clientVersion)
     }
 
     private fun seedToSecret(list: List<Int>): String {
@@ -132,22 +163,12 @@ class Authentication(
         override val message: String
     ) : Exception(message)
 
-    private var cookie: Cookie? = null
-    private suspend fun createCookie(): Cookie {
-        val req = Request.Builder()
-            .url("https://www.spotify.com/api/masthead/v1/masthead?language=en")
-        val cookie = client.newCall(req.build()).await().headers("Set-Cookie").mapNotNull {
-            Cookie.parse("https://open.spotify.com/".toHttpUrl(), it)
-        }.find { it.name == "sp_t" }!!
-        return cookie
-    }
+    @Serializable
+    data class ClientTokenResponse(
+        @SerialName("granted_token")
+        val grantedToken: GrantedToken
+    )
 
-    @Suppress("unused")
-    suspend fun getSpT(): String {
-        val cookie = cookie
-        if (cookie != null && cookie.expiresAt > System.currentTimeMillis()) return cookie.value
-        val new = createCookie()
-        this.cookie = new
-        return new.value
-    }
+    @Serializable
+    data class GrantedToken(val token: String)
 }

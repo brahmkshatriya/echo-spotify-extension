@@ -129,21 +129,17 @@ data class Metadata4Track(
 
     @Suppress("unused")
     @Serializable
-    enum class Format(val qualityRank: Int) {
-        OGG_VORBIS_320(8),
-        OGG_VORBIS_160(5),
-        OGG_VORBIS_96(2),
-
-        MP4_256_DUAL(7),
-        MP4_128_DUAL(4),
-
-        MP4_256(6),
-        MP4_128(3),
-
-        AAC_24(1),
-
+    enum class Format(val quality: Int) {
+        OGG_VORBIS_320(320),
+        OGG_VORBIS_160(160),
+        OGG_VORBIS_96(96),
+        MP4_256_DUAL(256),
+        MP4_128_DUAL(128),
+        MP4_256(256),
+        MP4_128(128),
+        AAC_24(240),
         //Preview
-        MP3_96(0)
+        MP3_96(96)
     }
 }
 

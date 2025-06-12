@@ -31,6 +31,14 @@ jobs:
           echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > $GITHUB_WORKSPACE/signing-key.jks
           chmod +x ./gradlew
 
+      - name: Download Dependency
+        shell: Bash
+        env:
+          DEPENDENCY_URL: ${{ secrets.DEPENDENCY_URL }}
+        run: |
+          mkdir -p app/libs
+          curl -L -o app/libs/unplayplay.aar ${{ env.DEPENDENCY_URL }}
+
       - name: Build with Gradle
         run: |
           ./gradlew assembleRelease \

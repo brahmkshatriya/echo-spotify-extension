@@ -47,12 +47,16 @@ import dev.brahmkshatriya.echo.extension.spotify.models.AccountAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.ArtistOverview
 import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
 import dev.brahmkshatriya.echo.extension.spotify.models.Item
+import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track
 import dev.brahmkshatriya.echo.extension.spotify.models.UserProfileView
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import java.io.EOFException
+import java.io.File
+import java.io.InputStream
 import java.net.URLDecoder
 
-class SpotifyExtension : ExtensionClient, LoginClient.WebView,
+open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     SearchFeedClient, HomeFeedClient, LibraryFeedClient, LyricsClient, ShareClient,
     TrackClient, TrackLikeClient, TrackHideClient, RadioClient, SaveToLibraryClient,
     AlbumClient, PlaylistClient, ArtistClient, ArtistFollowClient, PlaylistEditClient {
@@ -60,13 +64,14 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     override suspend fun onExtensionSelected() {}
     override val settingItems: List<Setting> = emptyList()
 
-    private lateinit var setting: Settings
+    lateinit var setting: Settings
     override fun setSettings(settings: Settings) {
         setting = settings
     }
 
-    private val api by lazy {
-        SpotifyApi {
+    open val cacheDir = File("cache")
+    val api by lazy {
+        SpotifyApi(cacheDir) {
             val token = cookie
             if (it.code == 401 && token != null) throw ClientException.Unauthorized(token)
             else throw it
@@ -97,7 +102,7 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val cookie = if (user == null) null
         else user.extras["cookie"] ?: throw ClientException.Unauthorized(user.id)
         api.setCookie(cookie)
-        this.user = null
+        this.user = user
         this.product = null
     }
 
@@ -203,6 +208,8 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         return when (streamable.type) {
             Streamable.MediaType.Server -> {
                 api.cookie ?: throw ClientException.LoginRequired()
+                val format = Metadata4Track.Format.valueOf(streamable.extras["format"]!!)
+                if(format != Metadata4Track.Format.MP4_128 && format != Metadata4Track.Format.MP4_256 ) throw ClientException.NotSupported(format.name)
                 val accessToken = api.getAccessToken()
                 val url = queries.storageResolve(streamable.id).json.cdnUrl.first()
                 val time = "time=${System.currentTimeMillis()}"
@@ -224,12 +231,17 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         }
     }
 
+    open val supportsPlayPlay = false
+    open val showWidevineStreams = true
+
     override suspend fun loadTrack(track: Track): Track = coroutineScope {
         val hasPremium = hasPremium()
         val canvas = async { queries.canvas(track.id).json.toStreamable() }
         val isLiked = async { isSavedToLibrary(track.toMediaItem()) }
         queries.metadata4Track(track.id).json.toTrack(
             hasPremium,
+            supportsPlayPlay,
+            showWidevineStreams,
             canvas.await()
         ).copy(
             isExplicit = track.isExplicit,
@@ -603,4 +615,26 @@ class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }
 
     override suspend fun loadLyrics(lyrics: Lyrics) = lyrics
+
+    companion object {
+        fun InputStream.skipBytes(len: Int) {
+            var remaining = len
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (remaining > 0) {
+                val toRead = minOf(remaining, buffer.size)
+                val read = read(buffer, 0, toRead)
+                if (read == -1) break // EOF
+                remaining -= read
+            }
+            if (remaining > 0) throw EOFException("Reached end of stream before reading $len bytes")
+        }
+
+
+        fun String.hexToByteArray(): ByteArray {
+            require(length % 2 == 0) { "Hex string must have an even length" }
+            return ByteArray(length / 2) { i ->
+                substring(2 * i, 2 * i + 2).toInt(16).toByte()
+            }
+        }
+    }
 }

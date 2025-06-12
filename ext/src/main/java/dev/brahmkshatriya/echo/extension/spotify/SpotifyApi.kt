@@ -13,9 +13,11 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.internal.closeQuietly
 import okhttp3.internal.commonIsSuccessful
+import java.io.File
 import java.net.URLEncoder
 
 class SpotifyApi(
+    val cacheDir: File,
     val onError: SpotifyApi.(Authentication.Error) -> Unit
 ) {
 
@@ -31,7 +33,7 @@ class SpotifyApi(
 
     val json = Json()
 
-    private val client = OkHttpClient.Builder()
+    val client = OkHttpClient.Builder()
         .addInterceptor { chain ->
             val request = chain.request()
             val builder = chain.request().newBuilder()
@@ -41,6 +43,9 @@ class SpotifyApi(
             auth.accessToken?.let {
                 if (request.headers["Authorization"] == null)
                     builder.addHeader("Authorization", "Bearer $it")
+            }
+            auth.clientToken?.let {
+                builder.addHeader("Client-Token", it)
             }
             chain.proceed(builder.build())
         }

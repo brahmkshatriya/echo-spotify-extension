@@ -258,7 +258,7 @@ class Queries(
 
     suspend fun homeFeedChips(token: String? = null) = api.graphQuery<HomeFeed>(
         "homeFeedChips",
-        "26794052084a1d604a9644ab869b9e467afbd4e29a38edaaed9073e70834df81",
+        "3357ffed7961629ba92b4e0a41514e4d5004a14355c964c23ce442205c9e44a1",
         buildJsonObject {
             put("timeZone", TimeZone.getDefault().id!!)
             put("sp_t", token ?: "")
@@ -267,7 +267,7 @@ class Queries(
 
     suspend fun home(facet: String?, token: String? = null) = api.graphQuery<HomeFeed>(
         "home",
-        "26794052084a1d604a9644ab869b9e467afbd4e29a38edaaed9073e70834df81",
+        "3357ffed7961629ba92b4e0a41514e4d5004a14355c964c23ce442205c9e44a1",
         buildJsonObject {
             put("timeZone", TimeZone.getDefault().id!!)
             put("sp_t", token ?: "")
@@ -278,7 +278,7 @@ class Queries(
 
     suspend fun homeSubfeed(facet: String?, token: String? = null) = api.graphQuery<HomeFeed>(
         "homeSubfeed",
-        "26794052084a1d604a9644ab869b9e467afbd4e29a38edaaed9073e70834df81",
+        "3357ffed7961629ba92b4e0a41514e4d5004a14355c964c23ce442205c9e44a1",
         buildJsonObject {
             put("timeZone", TimeZone.getDefault().id!!)
             put("sp_t", token ?: "")
