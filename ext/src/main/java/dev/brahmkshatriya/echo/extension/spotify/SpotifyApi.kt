@@ -56,16 +56,21 @@ class SpotifyApi(
         val raw: String
     )
 
-    fun graphRequest(
+    suspend fun graphCall(
         operationName: String,
         persistedQuery: String,
         variables: JsonObject = buildJsonObject { },
-    ) = run {
-        val builder = StringBuilder("https://api-partner.spotify.com/pathfinder/v1/query")
-            .append("?operationName=${operationName}")
-            .append("&variables=${urlEncode(variables)}")
-            .append("&extensions=${urlEncode((extensions(persistedQuery)))}")
-        Request.Builder().url(builder.toString())
+    ): String {
+        val req = Request.Builder()
+            .url("https://api-partner.spotify.com/pathfinder/v2/query")
+            .post(
+                buildJsonObject {
+                    put("operationName", operationName)
+                    put("variables", variables)
+                    put("extensions", extensions(persistedQuery))
+                }.toString().toRequestBody("application/json".toMediaType())
+            )
+        return call(req.build())
     }
 
     suspend inline fun <reified T> graphQuery(
@@ -74,26 +79,9 @@ class SpotifyApi(
         variables: JsonObject = buildJsonObject { },
         print: Boolean = false
     ): Response<T> {
-        val raw = call(graphRequest(operationName, persistedQuery, variables).build())
+        val raw = graphCall(operationName, persistedQuery, variables)
         if (print) println(raw)
         return Response(json.decode<T>(raw), raw)
-    }
-
-    suspend fun graphMutate(
-        operationName: String,
-        persistedQuery: String,
-        variables: JsonObject
-    ): String {
-        val request = Request.Builder()
-            .url("https://api-partner.spotify.com/pathfinder/v1/query")
-            .post(
-                buildJsonObject {
-                    put("operationName", operationName)
-                    put("variables", variables)
-                    put("extensions", extensions(persistedQuery))
-                }.toString().toRequestBody("application/json".toMediaType())
-            )
-        return call(request.build())
     }
 
     suspend inline fun <reified T> clientQuery(path: String): Response<T> {
@@ -127,7 +115,6 @@ class SpotifyApi(
     }
 
     fun urlEncode(data: String): String = URLEncoder.encode(data, "UTF-8")
-    private fun urlEncode(data: JsonObject) = urlEncode(data.toString())
     private fun extensions(persistedQuery: String): JsonObject {
         return buildJsonObject {
             putJsonObject("persistedQuery") {

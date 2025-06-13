@@ -46,6 +46,7 @@ import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
 import dev.brahmkshatriya.echo.extension.spotify.models.AccountAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.ArtistOverview
 import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
+import dev.brahmkshatriya.echo.extension.spotify.models.HomeFeed
 import dev.brahmkshatriya.echo.extension.spotify.models.Item
 import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track
 import dev.brahmkshatriya.echo.extension.spotify.models.UserProfileView
@@ -209,7 +210,9 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             Streamable.MediaType.Server -> {
                 api.cookie ?: throw ClientException.LoginRequired()
                 val format = Metadata4Track.Format.valueOf(streamable.extras["format"]!!)
-                if(format != Metadata4Track.Format.MP4_128 && format != Metadata4Track.Format.MP4_256 ) throw ClientException.NotSupported(format.name)
+                if (format != Metadata4Track.Format.MP4_128 && format != Metadata4Track.Format.MP4_256) throw ClientException.NotSupported(
+                    format.name
+                )
                 val accessToken = api.getAccessToken()
                 val url = queries.storageResolve(streamable.id).json.cdnUrl.first()
                 val time = "time=${System.currentTimeMillis()}"
@@ -445,21 +448,19 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         }
     }
 
+    private var allHomeFeed: HomeFeed.Home? = null
     override suspend fun getHomeTabs(): List<Tab> {
         if (api.cookie == null) return emptyList()
         val all = listOf(Tab("", "All"))
-        return all + queries.homeFeedChips().json.data?.home?.homeChips?.toTabs()!!
+        val home = queries.home(null).json.data?.home!!
+        allHomeFeed = home
+        return all + home.homeChips?.toTabs()!!
     }
 
     override fun getHomeFeed(tab: Tab?) = PagedData.Single {
-        val home = if (tab == null || tab.id == "") queries.home(null).json.data?.home!!
-        else queries.homeSubfeed(tab.id).json.data?.home!!
-        home.run {
-            sectionContainer?.sections?.toShelves(
-                queries,
-                greeting?.transformedLabel ?: "What's on your mind?"
-            )!!
-        }
+        val home = if (tab != null && tab.id != "") queries.home(tab.id).json.data?.home!!
+        else allHomeFeed ?: queries.home(null).json.data?.home!!
+        home.toShelves(queries)
     }
 
     override suspend fun onShare(item: EchoMediaItem): String {

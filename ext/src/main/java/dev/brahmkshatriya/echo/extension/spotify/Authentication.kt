@@ -115,8 +115,10 @@ class Authentication(
         }
         val seed = seedRegex.find(jsBody)?.groupValues?.get(1)?.split(",")?.map { it.toInt() }
             ?: throw IllegalStateException("Failed to get seed")
-        val (buildVer, buildDate) = buildRegex.find(jsBody)?.destructured
-            ?: throw IllegalStateException("Failed to get build info")
+        val (buildVer, buildDate) = buildRegex.find(jsBody)?.destructured?.let {
+            it.component1() to it.component2()
+        } ?: ("unknown" to "unknown")
+
         val (client, clientVersion) = clientVersionRegex.find(jsBody)?.destructured
             ?: throw IllegalStateException("Failed to get client version")
 

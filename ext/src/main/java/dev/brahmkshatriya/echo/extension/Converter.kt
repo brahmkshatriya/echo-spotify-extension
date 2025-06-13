@@ -52,6 +52,13 @@ fun List<HomeFeed.Chip>.toTabs() = map {
     Tab(it.id!!, it.label?.transformedLabel!!)
 }
 
+fun HomeFeed.Home.toShelves(queries: Queries): List<Shelf> {
+    return sectionContainer?.sections?.toShelves(
+        queries,
+        greeting?.transformedLabel ?: "What's on your mind?"
+    )!!
+}
+
 fun Sections.toShelves(
     queries: Queries,
     emptyTitle: String? = null,
@@ -66,7 +73,7 @@ fun Sections.toShelves(
         val subtitle = item.data.subtitle?.transformedLabel
         when (item.data.typename) {
             null -> null
-            Sections.Typename.BrowseGenericSectionData, Sections.Typename.HomeRecentlyPlayedSectionData ->
+            Sections.Typename.BrowseGenericSectionData,  ->
                 Shelf.Lists.Items(
                     title = title,
                     subtitle = subtitle,
@@ -111,6 +118,7 @@ fun Sections.toShelves(
             Sections.Typename.BrowseUnsupportedSectionData -> null
             Sections.Typename.HomeOnboardingSectionDataV2 -> null
             Sections.Typename.HomeWatchFeedSectionData -> null
+            Sections.Typename.HomeRecentlyPlayedSectionData -> null
         }
     }!!
 }

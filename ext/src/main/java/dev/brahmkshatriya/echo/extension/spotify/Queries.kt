@@ -256,28 +256,8 @@ class Queries(
         "inspiredby-mix/v2/seed_to_playlist/$uri?response-format=json"
     )
 
-    suspend fun homeFeedChips(token: String? = null) = api.graphQuery<HomeFeed>(
-        "homeFeedChips",
-        "3357ffed7961629ba92b4e0a41514e4d5004a14355c964c23ce442205c9e44a1",
-        buildJsonObject {
-            put("timeZone", TimeZone.getDefault().id!!)
-            put("sp_t", token ?: "")
-        }
-    )
-
     suspend fun home(facet: String?, token: String? = null) = api.graphQuery<HomeFeed>(
         "home",
-        "3357ffed7961629ba92b4e0a41514e4d5004a14355c964c23ce442205c9e44a1",
-        buildJsonObject {
-            put("timeZone", TimeZone.getDefault().id!!)
-            put("sp_t", token ?: "")
-            put("facet", facet ?: "")
-            put("sectionItemsLimit", 10)
-        }
-    )
-
-    suspend fun homeSubfeed(facet: String?, token: String? = null) = api.graphQuery<HomeFeed>(
-        "homeSubfeed",
         "3357ffed7961629ba92b4e0a41514e4d5004a14355c964c23ce442205c9e44a1",
         buildJsonObject {
             put("timeZone", TimeZone.getDefault().id!!)
@@ -441,7 +421,7 @@ class Queries(
         "user-profile-view/v3/profile/$id/following"
     )
 
-    suspend fun followUsers(vararg ids: String) = api.graphMutate(
+    suspend fun followUsers(vararg ids: String) = api.graphCall(
         "followUsers",
         "c00e0cb6c7766e7230fc256cf4fe07aec63b53d1160a323940fce7b664e95596",
         buildJsonObject {
@@ -451,7 +431,7 @@ class Queries(
         }
     )
 
-    suspend fun unfollowUsers(vararg ids: String) = api.graphMutate(
+    suspend fun unfollowUsers(vararg ids: String) = api.graphCall(
         "unfollowUsers",
         "c00e0cb6c7766e7230fc256cf4fe07aec63b53d1160a323940fce7b664e95596",
         buildJsonObject {
@@ -461,7 +441,7 @@ class Queries(
         }
     )
 
-    suspend fun removeFromLibrary(vararg uris: String) = api.graphMutate(
+    suspend fun removeFromLibrary(vararg uris: String) = api.graphCall(
         "removeFromLibrary",
         "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915",
         buildJsonObject {
@@ -471,7 +451,7 @@ class Queries(
         }
     )
 
-    suspend fun addToLibrary(vararg uris: String) = api.graphMutate(
+    suspend fun addToLibrary(vararg uris: String) = api.graphCall(
         "addToLibrary",
         "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915",
         buildJsonObject {
@@ -666,7 +646,7 @@ class Queries(
         }
     )
 
-    suspend fun moveItemsInPlaylist(uri: String, toUid: String, fromUid: String?) = api.graphMutate(
+    suspend fun moveItemsInPlaylist(uri: String, toUid: String, fromUid: String?) = api.graphCall(
         "moveItemsInPlaylist",
         "47c69e71df79e3c80e4af7e7a9a727d82565bb20ae20dc820d6bc6f94def482d",
         buildJsonObject {
@@ -681,7 +661,7 @@ class Queries(
         }
     )
 
-    suspend fun removeFromPlaylist(uri: String, vararg uid: String) = api.graphMutate(
+    suspend fun removeFromPlaylist(uri: String, vararg uid: String) = api.graphCall(
         "removeFromPlaylist",
         "47c69e71df79e3c80e4af7e7a9a727d82565bb20ae20dc820d6bc6f94def482d",
         buildJsonObject {
@@ -694,7 +674,7 @@ class Queries(
 
     suspend fun addToPlaylist(
         uri: String, fromUid: String?, vararg uris: String
-    ) = api.graphMutate(
+    ) = api.graphCall(
         "addToPlaylist",
         "47c69e71df79e3c80e4af7e7a9a727d82565bb20ae20dc820d6bc6f94def482d",
         buildJsonObject {
