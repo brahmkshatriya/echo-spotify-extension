@@ -9,6 +9,7 @@ dependencies {
     compileOnly("com.github.brahmkshatriya:echo:$libVersion")
     compileOnly("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
     implementation(files("libs/unplayplay.aar"))
+    compileOnly("com.google.protobuf:protobuf-java:3.22.3")
 }
 
 val extType: String by project
@@ -45,7 +46,10 @@ tasks.register("generateProguardRules") {
     doLast {
         outputDir.mkdirs()
         generatedProguard.writeText(
-            "-dontobfuscate\n-keep,allowoptimization class dev.brahmkshatriya.echo.extension.$extClass"
+            """
+            -dontobfuscate
+            -keep,allowoptimization class dev.brahmkshatriya.echo.extension.$extClass
+            """.trimIndent()
         )
     }
 }
