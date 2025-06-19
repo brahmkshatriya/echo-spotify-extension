@@ -24,6 +24,8 @@ import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem.Companion.toMediaItem
+import dev.brahmkshatriya.echo.common.models.Feed
+import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.ImageHolder
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
 import dev.brahmkshatriya.echo.common.models.Lyrics
@@ -38,7 +40,7 @@ import dev.brahmkshatriya.echo.common.models.Streamable.Media.Companion.toMedia
 import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
-import dev.brahmkshatriya.echo.common.settings.Setting
+import dev.brahmkshatriya.echo.common.settings.SettingSwitch
 import dev.brahmkshatriya.echo.common.settings.Settings
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi
@@ -63,7 +65,17 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     AlbumClient, PlaylistClient, ArtistClient, ArtistFollowClient, PlaylistEditClient {
 
     override suspend fun onExtensionSelected() {}
-    override val settingItems: List<Setting> = emptyList()
+    override val settingItems
+        get() = listOf(
+            SettingSwitch(
+                "Show Canvas",
+                "show_canvas",
+                "Whether to show background video canvas in songs",
+                showCanvas
+            )
+        )
+
+    private val showCanvas get() = setting.getBoolean("show_canvas") ?: true
 
     lateinit var setting: Settings
     override fun setSettings(settings: Settings) {
@@ -144,12 +156,12 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         }.orEmpty()
     }
 
-    private var oldSearch: PagedData<Shelf>? = null
-    private fun getBrowsePage(): PagedData<Shelf> = PagedData.Single {
+    private var oldSearch: Feed? = null
+    private fun getBrowsePage(): Feed = PagedData.Single {
         queries.browseAll().json.data.browseStart.sections.toShelves(queries)
-    }
+    }.toFeed()
 
-    override fun searchFeed(query: String, tab: Tab?): PagedData<Shelf> {
+    override fun searchFeed(query: String, tab: Tab?): Feed {
         if (query.isBlank()) return getBrowsePage()
         saveInHistory(query)
         if (tab == null || tab.id == "ALL") return oldSearch ?: getBrowsePage()
@@ -178,14 +190,14 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
                 else -> emptyList<Shelf>() to null
             }
-        }
+        }.toFeed()
     }
 
     override suspend fun searchTabs(query: String): List<Tab> {
         if (query.isBlank()) return emptyList()
         val (shelves, tabs) = queries.searchDesktop(query).json.data.searchV2
             .toShelvesAndTabs(queries)
-        oldSearch = shelves
+        oldSearch = shelves.toFeed()
         return tabs
     }
 
@@ -235,17 +247,18 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }
 
     open val supportsPlayPlay = false
-    open val showWidevineStreams = true
+    open val showWidevineStreams = false
 
     override suspend fun loadTrack(track: Track): Track = coroutineScope {
         val hasPremium = hasPremium()
-        val canvas = async { queries.canvas(track.id).json.toStreamable() }
+        val canvas =
+            if (showCanvas) async { queries.canvas(track.id).json.toStreamable() } else null
         val isLiked = async { isSavedToLibrary(track.toMediaItem()) }
         queries.metadata4Track(track.id).json.toTrack(
             hasPremium,
-            supportsPlayPlay,
+            supportsPlayPlay && !showWidevineStreams,
             showWidevineStreams,
-            canvas.await()
+            canvas?.await()
         ).copy(
             isExplicit = track.isExplicit,
             isLiked = isLiked.await()
@@ -461,7 +474,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val home = if (tab != null && tab.id != "") queries.home(tab.id).json.data?.home!!
         else allHomeFeed ?: queries.home(null).json.data?.home!!
         home.toShelves(queries)
-    }
+    }.toFeed()
 
     override suspend fun onShare(item: EchoMediaItem): String {
         val type = item.id.substringAfter("spotify:").substringBefore(":")
@@ -469,7 +482,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         return "https://open.spotify.com/$type/$id"
     }
 
-    override fun getLibraryFeed(tab: Tab?): PagedData<Shelf> {
+    override fun getLibraryFeed(tab: Tab?): Feed {
         if (api.cookie == null) throw ClientException.LoginRequired()
         return when (tab?.id) {
             "All", null -> pagedLibrary(queries)
@@ -497,7 +510,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             }
 
             else -> pagedLibrary(queries, tab.id)
-        }
+        }.toFeed()
     }
 
     override suspend fun getLibraryTabs(): List<Tab> {

@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.extension.spotify
 
+import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.urlEncode
 import dev.brahmkshatriya.echo.extension.spotify.models.AccountAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.AreEntitiesInLibrary
 import dev.brahmkshatriya.echo.extension.spotify.models.ArtistOverview
@@ -249,7 +250,7 @@ class Queries(
     )
 
     suspend fun colorLyrics(id: String, img: String) = api.clientQuery<ColorLyrics>(
-        "color-lyrics/v2/track/$id/image/${api.urlEncode(img)}?format=json&vocalRemoval=false&market=from_token"
+        "color-lyrics/v2/track/$id/image/${urlEncode(img)}?format=json&vocalRemoval=false&market=from_token"
     )
 
     suspend fun seedToPlaylist(uri: String) = api.clientQuery<SeedToPlaylist>(

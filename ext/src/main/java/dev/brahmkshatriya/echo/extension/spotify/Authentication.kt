@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
+import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.urlEncode
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -11,6 +12,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.text.Charsets.UTF_8
 
 class Authentication(
     private val api: SpotifyApi
@@ -21,7 +23,6 @@ class Authentication(
         val cookie = api.cookie
         if (cookie != null) req.addHeader("Cookie", cookie)
         req.addHeader(userAgent.first, userAgent.second)
-        req.addHeader("Accept", "application/json")
         req.addHeader("Referer", "https://open.spotify.com/")
         it.proceed(req.build())
     }.build()
@@ -34,27 +35,36 @@ class Authentication(
     private suspend fun createAccessToken(): String {
         val (url, clientVersion, clientId) = getUrlAndClient()
         val req = Request.Builder().url(url)
-        val body = httpClient.newCall(req.build()).await().body.string()
-        val response = runCatching { json.decode<TokenResponse>(body) }.getOrElse {
+        val res = httpClient.newCall(req.build()).await()
+        val body = res.body.string()
+        println(res)
+        println(body)
+        val token = runCatching { json.decode<TokenResponse>(body) }.getOrElse {
             throw runCatching { json.decode<ErrorMessage>(body).error }.getOrElse {
-                Exception(body)
+                Exception(body.ifEmpty { "Token Code ${res.code}" })
             }
         }
-        val deviceId = response.clientId
+        val deviceId = token.clientId
         val postData =
             """{"client_data":{"client_version":"$clientVersion","client_id":"$clientId","js_sdk_data":{"device_brand":"unknown","device_model":"unknown","os":"windows","os_version":"NT 10.0","device_id":"$deviceId","device_type":"computer"}}}"""
                 .toByteArray()
+        println(postData.toString(UTF_8))
+        println("""{"client_data":{"client_version":"1.2.67.229.g0645b43b","client_id":"d8a5ed958d274c2e8ee717e6a4b0971d","js_sdk_data":{"device_brand":"unknown","device_model":"unknown","os":"windows","os_version":"NT 10.0","device_id":"e4b7be755a8db86b9bade36c99e67dae","device_type":"computer"}}}""")
         val clientTokenUrl = Request.Builder()
             .url("https://clienttoken.spotify.com/v1/clienttoken")
+            .header("accept", "application/json")
             .post(
                 postData.toRequestBody("application/json".toMediaType(), 0, postData.size)
             ).build()
 
-        val clientTokenResponse = httpClient.newCall(clientTokenUrl).await().body.string()
-        clientToken = json.decode<ClientTokenResponse>(clientTokenResponse).grantedToken.token
+        val clientTokenResponse = httpClient.newCall(clientTokenUrl).await()
+        val clientTokenBody = clientTokenResponse.body.string()
+        clientToken = runCatching { json.decode<ClientTokenResponse>(clientTokenBody) }.getOrElse {
+            throw Exception(clientTokenBody.ifEmpty { "Client Token Code ${res.code}" })
+        }.grantedToken.token
 
-        accessToken = response.accessToken
-        tokenExpiration = response.accessTokenExpirationTimestampMs - 5 * 60 * 1000
+        accessToken = token.accessToken
+        tokenExpiration = token.accessTokenExpirationTimestampMs - 5 * 60 * 1000
         return accessToken!!
     }
 
@@ -64,8 +74,9 @@ class Authentication(
         val time = System.currentTimeMillis()
         val totp = TOTP.generateTOTP(secret, (time / 30000).toHexString().uppercase())
         val serverTotp = TOTP.generateTOTP(secret, (serverTime / 30).toHexString().uppercase())
+        val validUntil = urlEncode(TOTP.getCustomFormattedDate())
         val url =
-            "https://open.spotify.com/api/token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=5&sTime=${serverTime}&cTime=${time}&buildVer=${buildVer}&buildDate=${buildDate}"
+            "https://open.spotify.com/api/token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=5&sTime=${serverTime}&cTime=${time}&buildVer=${buildVer}&buildDate=${buildDate}&totpValidUntil=${validUntil}"
         return Triple(url, clientVersion, clientId)
     }
 
@@ -76,7 +87,7 @@ class Authentication(
         Regex("https://open\\.spotifycdn\\.com/cdn/build/web-player/web-player\\..{8}\\.js")
     private val seedRegex = Regex("\\[(([0-9]{2},){16}[0-9]{2})]")
     private val buildRegex = Regex("buildVer:\"([^\"]+)\",buildDate:\"([^\"]+)\"")
-    private val clientVersionRegex = Regex(",clientId:\"(.{32})\",clientVersion:\"(.*)\",product")
+    private val clientVersionRegex = Regex(",clientId:\"(.{32})\",clientVersion:\"(.{20})\"")
 
     data class Data(
         val serverTime: Long,
@@ -128,7 +139,7 @@ class Authentication(
     private fun seedToSecret(list: List<Int>): String {
         return list.mapIndexed { index, byte -> byte xor ((index % 33) + 9) }
             .joinToString("")
-            .toByteArray(Charsets.UTF_8)
+            .toByteArray(UTF_8)
             .joinToString("") { it.toUByte().toString(16) }
     }
 

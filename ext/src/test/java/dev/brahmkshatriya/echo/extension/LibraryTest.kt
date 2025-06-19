@@ -31,7 +31,7 @@ class LibraryTest {
     private val extension = SpotifyExtension()
 
     private val mainThreadSurrogate = newSingleThreadContext("UI thread")
-    private val cookie = System.getenv("SPOTIFY_COOKIE")!!
+    private val cookie = "sp_new=1; sp_landingref=https%3A%2F%2Fopen.spotify.com%2F; sp_t=e4b7be755a8db86b9bade36c99e67dae; sp_landing=https%3A%2F%2Fopen.spotify.com%2F%3Fsp_cid%3De4b7be755a8db86b9bade36c99e67dae%26device%3Ddesktop; sp_m=in-en; sp_dc=AQBWGXfPdkzReqEKXu0ge7zSny7L5_iA2xCsxAmfwz51UoQ89nFpBK_hRRrXH2IK5eiERHr_HuEohb0nCvOdkUVAvuBlhUSd8t48Q1QqUhrUHkS9K4ZpmzLyKsQa8rYhjJ3hykd41t6lQji-4YgKMaMUvANllSJZR20reeBflWym1oHBoetyjKRwCTKZzEko5iaDx_B50i_CXwUap4A; sp_key=03ded003-ae2e-4bfd-9cc2-fc82668d58bf"
     private val user = User("", "", extras = mapOf("cookie" to cookie))
 
     @Before
@@ -78,7 +78,7 @@ class LibraryTest {
     fun testSearchEmpty() = testIn("Testing Empty Search") {
         val tab = extension.searchTabs("").firstOrNull()
         val feed = extension.searchFeed("", tab)
-        val shelves = feed.loadAll()
+        val shelves = feed.pagedData.loadAll()
         val shelf = shelves.first() as Shelf.Lists.Categories
         val load = shelf.list.first().items!!.loadList(null).data
         load.forEach { it.print() }
@@ -91,9 +91,9 @@ class LibraryTest {
         val quickSearch = extension.quickSearch(searchQuery)
         quickSearch.forEach { println(it) }
         val feed = extension.searchFeed(searchQuery, Tab("USERS", ""))
-        val page = feed.loadList(null)
+        val page = feed.pagedData.loadList(null)
         println("Page ${page.continuation}: ${page.data}")
-        val page2 = feed.loadList(page.continuation)
+        val page2 = feed.pagedData.loadList(page.continuation)
         println("Page ${page.continuation}: ${page2.data}")
     }
 
@@ -162,9 +162,9 @@ class LibraryTest {
     fun testHomeFeed() = testIn("Home Feed Test") {
         val tabs = extension.getHomeTabs()
         println(tabs)
-        extension.getHomeFeed(null).loadAll().forEach { it.print() }
+        extension.getHomeFeed(null).pagedData.loadAll().forEach { it.print() }
         tabs.forEach { tab ->
-            extension.getHomeFeed(tab).loadAll().forEach { it.print() }
+            extension.getHomeFeed(tab).pagedData.loadAll().forEach { it.print() }
         }
     }
 
@@ -216,7 +216,7 @@ class LibraryTest {
     @Test
     fun testLibrary() = testIn("Library Test") {
         val tabs = extension.getLibraryTabs()
-        val feed = extension.getLibraryFeed(tabs.first()).loadAll()
+        val feed = extension.getLibraryFeed(tabs.first()).pagedData.loadAll()
         val liked =
             ((feed.first() as Shelf.Item).media as EchoMediaItem.Lists.PlaylistItem).playlist
         println(liked)
