@@ -73,7 +73,7 @@ fun Sections.toShelves(
         val subtitle = item.data.subtitle?.transformedLabel
         when (item.data.typename) {
             null -> null
-            Sections.Typename.BrowseGenericSectionData,  ->
+            Sections.Typename.BrowseGenericSectionData ->
                 Shelf.Lists.Items(
                     title = title,
                     subtitle = subtitle,
@@ -205,7 +205,7 @@ fun IAlbum.toAlbum(n: String? = null): Album? {
                 appendLine(it.text)
             }
         },
-        publisher = label
+        label = label
     )
 }
 
@@ -704,6 +704,12 @@ fun Metadata4Track.toTrack(
             cover = album.coverGroup?.image?.lastOrNull()?.fileId?.let {
                 "https://i.scdn.co/image/$it".toImageHolder()
             },
+            artists = album.artist?.mapNotNull {
+                val artistGid = it.gid ?: return@mapNotNull null
+                val artistId = Base62.encode(artistGid)
+                Artist("spotify:artist:$artistId", it.name ?: return@mapNotNull null)
+            }.orEmpty(),
+            label = album.label,
             releaseDate = album.date?.toReleaseDate(),
         )
     }
@@ -723,8 +729,12 @@ fun Metadata4Track.toTrack(
             Artist("spotify:artist:$artistId", name, subtitle = subtitle)
         } ?: listOf(),
         album = alb,
+        albumNumber = number,
+        albumDiscNumber = discNumber,
+        irsc = externalId?.firstOrNull()?.id,
         releaseDate = alb?.releaseDate,
         description = album?.label,
+        isExplicit = explicit == true,
     )
 }
 

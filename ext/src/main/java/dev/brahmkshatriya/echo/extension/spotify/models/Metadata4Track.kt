@@ -16,9 +16,10 @@ data class Metadata4Track(
 
     val duration: Long? = null,
     val popularity: Long? = null,
+    val explicit: Boolean? = null,
 
     @SerialName("external_id")
-    val externalId: List<ExternalId>? = null,
+    val externalId: List<ExternalID>? = null,
 
     val file: List<File>? = null,
     val preview: List<File>? = null,
@@ -27,13 +28,16 @@ data class Metadata4Track(
     @SerialName("earliest_live_timestamp")
     val earliestLiveTimestamp: Long? = null,
 
+    @SerialName("has_lyrics")
+    val hasLyrics: Boolean? = null,
+
     val licensor: Licensor? = null,
 
     @SerialName("language_of_performance")
     val languageOfPerformance: List<String>? = null,
 
     @SerialName("original_audio")
-    val originalAudio: Licensor? = null,
+    val originalAudio: OriginalAudio? = null,
 
     @SerialName("original_title")
     val originalTitle: String? = null,
@@ -42,10 +46,22 @@ data class Metadata4Track(
     val artistWithRole: List<ArtistWithRole>? = null,
 
     @SerialName("canonical_uri")
-    val canonicalUri: String? = null,
+    val canonicalURI: String? = null,
+
+    @SerialName("prerelease_config")
+    val prereleaseConfig: Metadata4TrackPrereleaseConfig? = null,
 
     @SerialName("content_authorization_attributes")
-    val contentAuthorizationAttributes: String? = null
+    val contentAuthorizationAttributes: String? = null,
+
+    @SerialName("track_content_rating")
+    val trackContentRating: List<TrackContentRating>? = null,
+
+    @SerialName("audio_formats")
+    val audioFormats: List<AudioFormat>? = null,
+
+    @SerialName("media_type")
+    val mediaType: String? = null,
 ) {
 
     @Serializable
@@ -59,7 +75,10 @@ data class Metadata4Track(
         @SerialName("cover_group")
         val coverGroup: CoverGroup? = null,
 
-        val licensor: Licensor? = null
+        val licensor: Licensor? = null,
+
+        @SerialName("prerelease_config")
+        val prereleaseConfig: AlbumPrereleaseConfig? = null
     )
 
     @Serializable
@@ -96,6 +115,15 @@ data class Metadata4Track(
     )
 
     @Serializable
+    data class AlbumPrereleaseConfig(
+        @SerialName("earliest_reveal_date")
+        val earliestRevealDate: Date? = null,
+
+        @SerialName("earliest_coverart_reveal_date")
+        val earliestCoverArtRevealDate: Date? = null
+    )
+
+    @Serializable
     data class ArtistWithRole(
         @SerialName("artist_gid")
         val artistGid: String? = null,
@@ -107,7 +135,19 @@ data class Metadata4Track(
     )
 
     @Serializable
-    data class ExternalId(
+    data class AudioFormat(
+        @SerialName("original_audio")
+        val originalAudio: OriginalAudio? = null
+    )
+
+    @Serializable
+    data class OriginalAudio(
+        val uuid: String? = null,
+        val format: String? = null
+    )
+
+    @Serializable
+    data class ExternalID(
         val type: String? = null,
         val id: String? = null
     )
@@ -123,8 +163,19 @@ data class Metadata4Track(
     data class File(
         @SerialName("file_id")
         val fileId: String? = null,
-
         val format: Format? = null
+    )
+
+    @Serializable
+    data class Metadata4TrackPrereleaseConfig(
+        @SerialName("earliest_reveal_date")
+        val earliestRevealDate: Date? = null
+    )
+
+    @Serializable
+    data class TrackContentRating(
+        val tag: String? = null,
+        val markets: List<String>? = null
     )
 
     @Suppress("unused")
