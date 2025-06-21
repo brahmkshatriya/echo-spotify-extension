@@ -18,7 +18,7 @@ class Authentication(
     private val api: SpotifyApi
 ) {
     private val json = Json()
-    private val httpClient = OkHttpClient.Builder().addInterceptor {
+    val httpClient = OkHttpClient.Builder().addInterceptor {
         val req = it.request().newBuilder()
         val cookie = api.cookie
         if (cookie != null) req.addHeader("Cookie", cookie)
@@ -37,8 +37,6 @@ class Authentication(
         val req = Request.Builder().url(url)
         val res = httpClient.newCall(req.build()).await()
         val body = res.body.string()
-        println(res)
-        println(body)
         val token = runCatching { json.decode<TokenResponse>(body) }.getOrElse {
             throw runCatching { json.decode<ErrorMessage>(body).error }.getOrElse {
                 Exception(body.ifEmpty { "Token Code ${res.code}" })
@@ -48,8 +46,6 @@ class Authentication(
         val postData =
             """{"client_data":{"client_version":"$clientVersion","client_id":"$clientId","js_sdk_data":{"device_brand":"unknown","device_model":"unknown","os":"windows","os_version":"NT 10.0","device_id":"$deviceId","device_type":"computer"}}}"""
                 .toByteArray()
-        println(postData.toString(UTF_8))
-        println("""{"client_data":{"client_version":"1.2.67.229.g0645b43b","client_id":"d8a5ed958d274c2e8ee717e6a4b0971d","js_sdk_data":{"device_brand":"unknown","device_model":"unknown","os":"windows","os_version":"NT 10.0","device_id":"e4b7be755a8db86b9bade36c99e67dae","device_type":"computer"}}}""")
         val clientTokenUrl = Request.Builder()
             .url("https://clienttoken.spotify.com/v1/clienttoken")
             .header("accept", "application/json")

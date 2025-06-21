@@ -8,8 +8,6 @@ dependencies {
     val libVersion: String by project
     compileOnly("com.github.brahmkshatriya:echo:$libVersion")
     compileOnly("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
-//    implementation(files("libs/unplayplay.aar"))
-//    compileOnly("com.google.protobuf:protobuf-java:3.22.3")
 }
 
 val extType: String by project

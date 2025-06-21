@@ -24,7 +24,7 @@ class SpotifyApi(
     val cookie get() = _cookie
 
     private val authMutex = Mutex()
-    private val auth = Authentication(this)
+    val auth = Authentication(this)
     private var _cookie: String? = null
     suspend fun setCookie(cookie: String?) {
         _cookie = cookie
@@ -70,7 +70,7 @@ class SpotifyApi(
                     put("extensions", extensions(persistedQuery))
                 }.toString().toRequestBody("application/json".toMediaType())
             )
-        return call(req.build())
+        return callGetBody(req.build())
     }
 
     suspend inline fun <reified T> graphQuery(
@@ -85,7 +85,7 @@ class SpotifyApi(
     }
 
     suspend inline fun <reified T> clientQuery(path: String): Response<T> {
-        val raw = call(
+        val raw = callGetBody(
             Request.Builder()
                 .url("https://spclient.wg.spotify.com/$path")
                 .build()
@@ -94,7 +94,7 @@ class SpotifyApi(
     }
 
     suspend inline fun <reified T> clientMutate(path: String, data: JsonObject): Response<T> {
-        val raw = call(
+        val raw = callGetBody(
             Request.Builder()
                 .url("https://spclient.wg.spotify.com/$path")
                 .post(data.toString().toRequestBody("application/json".toMediaType()))
@@ -103,12 +103,12 @@ class SpotifyApi(
         return Response(json.decode<T>(raw), raw)
     }
 
-    suspend fun call(request: Request): String {
+    suspend fun callGetBody(request: Request): String {
         runCatching { authMutex.withLock { auth.getToken() } }.getOrElse {
             if (it is Authentication.Error) onError(it)
             throw it
         }
-        val response = callGetBody(request)
+        val response = call(request).body.string()
         return if (response.startsWith('{')) response else {
             throw Exception("Invalid response: $response")
         }
@@ -124,13 +124,13 @@ class SpotifyApi(
         }
     }
 
-    private suspend fun callGetBody(
+    suspend fun call(
         request: Request, ignore: Boolean = false, auth: String? = null
     ) = run {
         val req = if (auth == null) request
         else request.newBuilder().addHeader("Authorization", "Bearer $auth").build()
         val res = client.newCall(req).await()
-        if (ignore || res.commonIsSuccessful) res.body.string()
+        if (ignore || res.commonIsSuccessful) res
         else {
             res.closeQuietly()
             throw Exception("${res.code}: Failed to call - ${req.url}")

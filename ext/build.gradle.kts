@@ -90,6 +90,17 @@ tasks {
     }
 }
 
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:3.24.4"
+    }
+    generateProtoTasks {
+        all().forEach { task ->
+            task.builtins {}
+        }
+    }
+}
+
 fun execute(vararg command: String): String {
     val processBuilder = ProcessBuilder(*command)
     val hashCode = command.joinToString().hashCode().toString()

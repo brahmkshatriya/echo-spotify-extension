@@ -18,6 +18,7 @@ import dev.brahmkshatriya.echo.common.clients.TrackClient
 import dev.brahmkshatriya.echo.common.clients.TrackHideClient
 import dev.brahmkshatriya.echo.common.clients.TrackLikeClient
 import dev.brahmkshatriya.echo.common.helpers.ClientException
+import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.helpers.WebViewRequest
 import dev.brahmkshatriya.echo.common.models.Album
@@ -37,27 +38,41 @@ import dev.brahmkshatriya.echo.common.models.Request.Companion.toRequest
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Streamable.Media.Companion.toMedia
+import dev.brahmkshatriya.echo.common.models.Streamable.Source.Companion.toSource
 import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.common.settings.SettingSwitch
 import dev.brahmkshatriya.echo.common.settings.Settings
+import dev.brahmkshatriya.echo.extension.spotify.MercuryAccessToken
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
+import dev.brahmkshatriya.echo.extension.spotify.mercury.MercuryConnection
+import dev.brahmkshatriya.echo.extension.spotify.mercury.StoredToken
 import dev.brahmkshatriya.echo.extension.spotify.models.AccountAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.ArtistOverview
 import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
 import dev.brahmkshatriya.echo.extension.spotify.models.HomeFeed
 import dev.brahmkshatriya.echo.extension.spotify.models.Item
 import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track
+import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track.Format.MP4_128
+import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track.Format.MP4_256
+import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track.Format.OGG_VORBIS_160
+import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track.Format.OGG_VORBIS_320
+import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track.Format.OGG_VORBIS_96
 import dev.brahmkshatriya.echo.extension.spotify.models.UserProfileView
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.io.EOFException
 import java.io.File
 import java.io.InputStream
+import java.math.BigInteger
 import java.net.URLDecoder
+import javax.crypto.Cipher
+import javax.crypto.CipherInputStream
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     SearchFeedClient, HomeFeedClient, LibraryFeedClient, LyricsClient, ShareClient,
@@ -90,6 +105,9 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             else throw it
         }
     }
+
+    private val mercuryAccessToken by lazy { MercuryAccessToken(api) }
+    private val mercuryConnection by lazy { MercuryConnection() }
     val queries by lazy { Queries(api) }
 
     override val webViewRequest = object : WebViewRequest.Cookie<List<User>> {
@@ -101,20 +119,33 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val emailRegex = Regex("remember=([^;]+)")
         override suspend fun onStop(url: Request, cookie: String): List<User> {
             if (!cookie.contains("sp_dc")) throw Exception("Token not found")
+            println("Cookie: $cookie")
             api.setCookie(cookie)
+            val accessToken = mercuryAccessToken.get()
+            val storedToken = MercuryConnection().getStoredToken(accessToken)
             val email = emailRegex.find(cookie)?.groups?.get(1)?.value?.let {
                 URLDecoder.decode(it, "UTF-8")
             }
-            val user = queries.profileAttributes().json.toUser()
-                .copy(extras = mapOf("cookie" to cookie), subtitle = email)
+            val user = queries.profileAttributes().json.toUser().copy(
+                extras = mapOf(
+                    "cookie" to cookie,
+                    "stored_token" to api.json.encode(storedToken)
+                ),
+                subtitle = email
+            )
             return listOf(user)
         }
     }
 
     override suspend fun onSetLoginUser(user: User?) {
-        val cookie = if (user == null) null
-        else user.extras["cookie"] ?: throw ClientException.Unauthorized(user.id)
+        val (cookie, storedToken) = if (user == null) null to null
+        else {
+            val cookie = user.extras["cookie"] ?: throw ClientException.Unauthorized(user.id)
+            val token = user.extras["stored_token"] ?: throw ClientException.Unauthorized(user.id)
+            cookie to api.json.decode<StoredToken>(token)
+        }
         api.setCookie(cookie)
+        mercuryConnection.authenticate(storedToken)
         this.user = user
         this.product = null
     }
@@ -222,21 +253,11 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             Streamable.MediaType.Server -> {
                 api.cookie ?: throw ClientException.LoginRequired()
                 val format = Metadata4Track.Format.valueOf(streamable.extras["format"]!!)
-                if (format != Metadata4Track.Format.MP4_128 && format != Metadata4Track.Format.MP4_256) throw ClientException.NotSupported(
-                    format.name
-                )
-                val accessToken = api.getAccessToken()
-                val url = queries.storageResolve(streamable.id).json.cdnUrl.first()
-                val time = "time=${System.currentTimeMillis()}"
-                val decryption = Streamable.Decryption.Widevine(
-                    "https://spclient.wg.spotify.com/widevine-license/v1/audio/license?$time"
-                        .toRequest(mapOf("Authorization" to "Bearer $accessToken")),
-                    true
-                )
-                Streamable.Source.Http(
-                    request = url.toRequest(),
-                    decryption = decryption,
-                ).toMedia()
+                return when (format) {
+                     OGG_VORBIS_320,  OGG_VORBIS_160,  OGG_VORBIS_96 -> oggStream(streamable)
+                     MP4_256,  MP4_128 -> widevineStream(streamable)
+                    else -> throw ClientException.NotSupported(format.name)
+                }
             }
 
             Streamable.MediaType.Background ->
@@ -246,7 +267,6 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         }
     }
 
-    open val supportsPlayPlay = false
     open val showWidevineStreams = false
 
     override suspend fun loadTrack(track: Track): Track = coroutineScope {
@@ -256,7 +276,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val isLiked = async { isSavedToLibrary(track.toMediaItem()) }
         queries.metadata4Track(track.id).json.toTrack(
             hasPremium,
-            supportsPlayPlay && !showWidevineStreams,
+            !showWidevineStreams,
             showWidevineStreams,
             canvas?.await()
         ).copy(
@@ -630,7 +650,80 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
     override suspend fun loadLyrics(lyrics: Lyrics) = lyrics
 
+    private suspend fun widevineStream(streamable: Streamable): Streamable.Media.Server {
+        val accessToken = api.getAccessToken()
+        val url = queries.storageResolve(streamable.id).json.cdnUrl.first()
+        val time = "time=${System.currentTimeMillis()}"
+        val decryption = Streamable.Decryption.Widevine(
+            "https://spclient.wg.spotify.com/widevine-license/v1/audio/license?$time"
+                .toRequest(mapOf("Authorization" to "Bearer $accessToken")),
+            true
+        )
+        return Streamable.Source.Http(
+            request = url.toRequest(),
+            decryption = decryption,
+        ).toMedia()
+    }
+
+    private suspend fun oggStream(streamable: Streamable): Streamable.Media {
+        val fileId = streamable.id
+        val gid = streamable.extras["gid"]
+            ?: throw IllegalArgumentException("GID is required for streaming")
+        val key = mercuryConnection.getAudioKey(gid, fileId)
+        val url = queries.storageResolve(streamable.id).json.cdnUrl.random()
+        return Streamable.InputProvider { position, length ->
+            decryptFromPosition(key, AUDIO_IV, position, length) { pos, len ->
+                val range = "bytes=$pos-${len?.toString() ?: ""}"
+                val request = okhttp3.Request.Builder().url(url)
+                    .header("Range", range)
+                    .build()
+                val resp = api.client.newCall(request).await()
+                val actualLength = resp.header("Content-Length")?.toLong() ?: -1L
+                resp.body.byteStream() to actualLength
+            }
+        }.toSource().toMedia()
+    }
+
+    private suspend fun decryptFromPosition(
+        key: ByteArray,
+        iv: BigInteger,
+        position: Long,
+        length: Long,
+        provider: suspend (Long, Long?) -> Pair<InputStream, Long>
+    ): Pair<InputStream, Long> {
+        val newPos = position + 0xA7
+        val alignedPos = newPos - (newPos % 16)
+        val blockOffset = (newPos % 16).toInt()
+        val len = if (length < 0) null else length + newPos - 1
+        val (input, contentLength) = provider(alignedPos, len)
+
+        val ivCounter = iv.add(BigInteger.valueOf(alignedPos / 16))
+        val ivBytes = ivCounter.to16ByteArray()
+
+        val cipher = Cipher.getInstance("AES/CTR/NoPadding")
+        cipher.init(
+            Cipher.DECRYPT_MODE,
+            SecretKeySpec(key, "AES"),
+            IvParameterSpec(ivBytes)
+        )
+
+        val cipherStream = CipherInputStream(input, cipher)
+
+        cipherStream.skipBytes(blockOffset)
+        return cipherStream to contentLength - blockOffset
+    }
+
     companion object {
+        private val AUDIO_IV = BigInteger("72e067fbddcbcf77ebe8bc643f630d93", 16)
+        private fun BigInteger.to16ByteArray(): ByteArray {
+            val full = toByteArray()
+            return when {
+                full.size == 16 -> full
+                full.size > 16 -> full.copyOfRange(full.size - 16, full.size)
+                else -> ByteArray(16 - full.size) + full
+            }
+        }
+
         fun InputStream.skipBytes(len: Int) {
             var remaining = len
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
@@ -642,7 +735,6 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             }
             if (remaining > 0) throw EOFException("Reached end of stream before reading $len bytes")
         }
-
 
         fun String.hexToByteArray(): ByteArray {
             require(length % 2 == 0) { "Hex string must have an even length" }

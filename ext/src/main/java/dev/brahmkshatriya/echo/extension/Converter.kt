@@ -661,7 +661,7 @@ private fun Metadata4Track.Date.toReleaseDate() =
 fun Metadata4Track.Format.show(
     hasPremium: Boolean, supportsPlayPlay: Boolean, showWidevineStreams: Boolean
 ) = when (this) {
-    Metadata4Track.Format.OGG_VORBIS_320 -> false
+    Metadata4Track.Format.OGG_VORBIS_320 -> hasPremium && supportsPlayPlay
     Metadata4Track.Format.OGG_VORBIS_160 -> supportsPlayPlay
     Metadata4Track.Format.OGG_VORBIS_96 -> supportsPlayPlay
     Metadata4Track.Format.MP4_256_DUAL -> false
