@@ -107,7 +107,6 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }
 
     private val mercuryAccessToken by lazy { MercuryAccessToken(api) }
-    private val mercuryConnection by lazy { MercuryConnection() }
     val queries by lazy { Queries(api) }
 
     override val webViewRequest = object : WebViewRequest.Cookie<List<User>> {
@@ -122,7 +121,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             println("Cookie: $cookie")
             api.setCookie(cookie)
             val accessToken = mercuryAccessToken.get()
-            val storedToken = MercuryConnection().getStoredToken(accessToken)
+            val storedToken = MercuryConnection.getStoredToken(accessToken)
             val email = emailRegex.find(cookie)?.groups?.get(1)?.value?.let {
                 URLDecoder.decode(it, "UTF-8")
             }
@@ -145,7 +144,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             cookie to api.json.decode<StoredToken>(token)
         }
         api.setCookie(cookie)
-        mercuryConnection.authenticate(storedToken)
+        api.storedToken = storedToken
         this.user = user
         this.product = null
     }
@@ -669,7 +668,10 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val fileId = streamable.id
         val gid = streamable.extras["gid"]
             ?: throw IllegalArgumentException("GID is required for streaming")
-        val key = mercuryConnection.getAudioKey(gid, fileId)
+        val storedToken = api.storedToken
+            ?: throw IllegalStateException("Spotify stored token is required for streaming")
+
+        val key = MercuryConnection.getAudioKey(storedToken, gid, fileId)
         val url = queries.storageResolve(streamable.id).json.cdnUrl.random()
         return Streamable.InputProvider { position, length ->
             decryptFromPosition(key, AUDIO_IV, position, length) { pos, len ->
@@ -734,13 +736,6 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
                 remaining -= read
             }
             if (remaining > 0) throw EOFException("Reached end of stream before reading $len bytes")
-        }
-
-        fun String.hexToByteArray(): ByteArray {
-            require(length % 2 == 0) { "Hex string must have an even length" }
-            return ByteArray(length / 2) { i ->
-                substring(2 * i, 2 * i + 2).toInt(16).toByte()
-            }
         }
     }
 }

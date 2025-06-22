@@ -36,13 +36,11 @@ class LibreSpotTest {
         runBlocking {
             spotifyApi.setCookie(cookie)
             val accessToken = MercuryAccessToken(spotifyApi).get()
-            val conn = MercuryConnection()
-            val stored = conn.getStoredToken(accessToken)
-            conn.authenticate(stored)
+            val storedToken = MercuryConnection.getStoredToken(accessToken)
 
             val gid = "7ab971000ff34d01931e1b66203a83f3"
             val fileId = "6f842a801d0460c56c6fef4368f9ea9026c13db2"
-            val key = conn.getAudioKey(gid, fileId)
+            val key = MercuryConnection.getAudioKey(storedToken, gid, fileId)
             println("Key: ${key.toHexString()}")
         }
     }

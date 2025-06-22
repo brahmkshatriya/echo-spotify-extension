@@ -1,6 +1,7 @@
 package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
+import dev.brahmkshatriya.echo.extension.spotify.mercury.StoredToken
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
@@ -30,6 +31,8 @@ class SpotifyApi(
         _cookie = cookie
         authMutex.withLock { auth.clear() }
     }
+
+    var storedToken: StoredToken? = null
 
     val json = Json()
 

@@ -11,16 +11,11 @@ import com.spotify.Keyexchange.ClientResponsePlaintext
 import com.spotify.Keyexchange.ProductFlags
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import dev.brahmkshatriya.echo.extension.spotify.mercury.DiffieHellman.Companion.toByteArray
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.ByteArrayOutputStream
@@ -40,23 +35,16 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.random.Random
 
-class MercuryConnection {
-    private val scope = CoroutineScope(Dispatchers.IO)
+class MercuryConnection private constructor() {
     private val keys = DiffieHellman()
 
     private lateinit var socket: Socket
     private lateinit var dataIn: DataInputStream
     private lateinit var dataOut: DataOutputStream
     private lateinit var cipherPair: CipherPair
-
-    private suspend fun close() = mutex.withLock {
-        println("Closing $running")
-        running?.cancel()
-        socket.close()
-    }
+    private suspend fun close() = mutex.withLock { socket.close() }
 
     private lateinit var apWelcome: APWelcome
-    private lateinit var audioKey: AudioKeyManager
 
     private suspend fun getWelcome(credentials: LoginCredentials): APWelcome {
         val clientResponseEncrypted = ClientResponseEncrypted.newBuilder()
@@ -83,7 +71,6 @@ class MercuryConnection {
     suspend fun getStoredToken(
         accessToken: String,
     ): StoredToken {
-        if (running != null) close()
         open()
         val credentials = LoginCredentials.newBuilder()
             .setTyp(Authentication.AuthenticationType.AUTHENTICATION_SPOTIFY_TOKEN)
@@ -98,11 +85,9 @@ class MercuryConnection {
     }
 
     @OptIn(ExperimentalEncodingApi::class)
-    suspend fun authenticate(
-        stored: StoredToken?,
+    private suspend fun authenticate(
+        stored: StoredToken,
     ) {
-        if (running != null) close()
-        if (stored == null) return
         open()
         val credentials = LoginCredentials.newBuilder()
             .setUsername(stored.username)
@@ -110,85 +95,36 @@ class MercuryConnection {
             .setAuthData(ByteString.copyFrom(Base64.decode(stored.token)))
             .build()
         apWelcome = getWelcome(credentials)
-        audioKey = AudioKeyManager(this)
         println("Session authenticated as ${apWelcome.canonicalUsername}")
-        running = scope.launch { run() }
     }
 
-    suspend fun getAudioKey(gid: String, fileId: String): ByteArray {
-        return runCatching {
-            audioKey.getAudioKey(ByteString.fromHex(gid), ByteString.fromHex(fileId))
-        }.getOrElse {
-            if (it is AudioKeyManager.AesKeyError && it.code == 2) {
-                println("Audio key not found, reconnecting...")
-                reconnect()
-                audioKey.getAudioKey(ByteString.fromHex(gid), ByteString.fromHex(fileId))
-            } else throw it
-        }
-    }
-
-    suspend fun send(cmd: Packet.Type, payload: ByteArray) {
+    private suspend fun send(cmd: Packet.Type, payload: ByteArray) {
         cipherPair.sendEncoded(dataOut, cmd.byte, payload)
     }
 
-    @OptIn(ExperimentalEncodingApi::class)
-    suspend fun reconnect() {
-        println("Reconnecting...")
-        runCatching {
-            authenticate(
-                StoredToken(
-                    apWelcome.canonicalUsername,
-                    Base64.encode(apWelcome.reusableAuthCredentials.toByteArray())
-                )
-            )
-            println("Re-authenticated as ${apWelcome.canonicalUsername}")
-        }.getOrElse {
-            println("Reconnecting failed!")
-            println(it.stackTraceToString())
-        }
-    }
-
-    private var running: Job? = null
-    private var scheduledReconnect: Job? = null
-
-    @OptIn(ExperimentalStdlibApi::class)
-    suspend fun run() = coroutineScope {
-        while (isActive) {
-            val packet: Packet
-            val cmd: Packet.Type?
-            try {
-                packet = cipherPair.receiveEncoded(dataIn)
-                cmd = Packet.Type.parse(packet.cmd)
-                if (cmd == null) {
-                    println("Skipping unknown command {cmd: 0x${Integer.toHexString(packet.cmd.toInt())}, payload: ${packet.payload.toHexString()}}")
-                    continue
-                }
-            } catch (ex: Exception) {
-                println("Failed reading packet!")
-                println(ex.stackTraceToString())
-                if (isActive) reconnect()
-                break
-            }
-
+    suspend fun getKey(gid: String, fileId: String): ByteArray {
+        println("Requesting key for gid: $gid, fileId: $fileId")
+        val payload =
+            AudioKeyManager.getPayload(ByteString.fromHex(gid), ByteString.fromHex(fileId))
+        send(Packet.Type.RequestKey, payload)
+        var keyPacket: Packet? = null
+        while (keyPacket == null) {
+            val packet = cipherPair.receiveEncoded(dataIn)
+            val cmd = Packet.Type.parse(packet.cmd)
+            println("Received packet: $cmd, length: ${packet.payload.size}")
             when (cmd) {
-                Packet.Type.Ping -> {
-                    scheduledReconnect?.cancel()
-                    scheduledReconnect = scope.launch {
-                        delay(120000)
-                        println("Socket timed out. Reconnecting...")
-                        reconnect()
-                    }
-                    runCatching {
-                        send(Packet.Type.Pong, packet.payload)
-                    }.getOrElse {
-                        println("Failed sending Pong!" + it.message)
-                    }
+                Packet.Type.Ping -> runCatching {
+                    send(Packet.Type.Pong, packet.payload)
+                }.getOrElse {
+                    println("Failed sending Pong!" + it.message)
                 }
 
-                Packet.Type.AesKey, Packet.Type.AesKeyError -> audioKey.packetFlow.emit(packet)
+                Packet.Type.AesKey, Packet.Type.AesKeyError -> keyPacket = packet
                 else -> Unit
             }
         }
+        close()
+        return AudioKeyManager.parsePacket(keyPacket)
     }
 
     private val serverKey = BigInteger(
@@ -354,6 +290,21 @@ class MercuryConnection {
             )
 
             println("CipherPair initialized successfully!")
+        }
+    }
+
+    companion object {
+        suspend fun getAudioKey(stored: StoredToken, gid: String, fileId: String): ByteArray {
+            return withTimeout(10000) {
+                MercuryConnection().run {
+                    authenticate(stored)
+                    getKey(gid, fileId)
+                }
+            }
+        }
+
+        suspend fun getStoredToken(accessToken: String): StoredToken {
+            return MercuryConnection().getStoredToken(accessToken)
         }
     }
 }
