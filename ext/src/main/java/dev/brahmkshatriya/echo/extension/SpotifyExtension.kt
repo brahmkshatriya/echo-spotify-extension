@@ -79,7 +79,6 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     TrackClient, TrackLikeClient, TrackHideClient, RadioClient, SaveToLibraryClient,
     AlbumClient, PlaylistClient, ArtistClient, ArtistFollowClient, PlaylistEditClient {
 
-    override suspend fun onExtensionSelected() {}
     override val settingItems
         get() = listOf(
             SettingSwitch(

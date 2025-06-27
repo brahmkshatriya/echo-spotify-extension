@@ -1,7 +1,6 @@
 package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
-import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.urlEncode
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -66,13 +65,12 @@ class Authentication(
 
     @OptIn(ExperimentalStdlibApi::class)
     private suspend fun getUrlAndClient(): Triple<String, String, String> {
-        val (serverTime, secret, buildVer, buildDate, clientId, clientVersion) = getDataFromSite()
+        val (serverTime, secret, clientId, clientVersion) = getDataFromSite()
         val time = System.currentTimeMillis()
         val totp = TOTP.generateTOTP(secret, (time / 30000).toHexString().uppercase())
         val serverTotp = TOTP.generateTOTP(secret, (serverTime / 30).toHexString().uppercase())
-        val validUntil = urlEncode(TOTP.getCustomFormattedDate())
         val url =
-            "https://open.spotify.com/api/token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=5&sTime=${serverTime}&cTime=${time}&buildVer=${buildVer}&buildDate=${buildDate}&totpValidUntil=${validUntil}"
+            "https://open.spotify.com/api/token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=7"
         return Triple(url, clientVersion, clientId)
     }
 
@@ -82,14 +80,11 @@ class Authentication(
     private val playerJsRegex =
         Regex("https://open\\.spotifycdn\\.com/cdn/build/web-player/web-player\\..{8}\\.js")
     private val seedRegex = Regex("\\[(([0-9]{2},){16}[0-9]{2})]")
-    private val buildRegex = Regex("buildVer:\"([^\"]+)\",buildDate:\"([^\"]+)\"")
-    private val clientVersionRegex = Regex(",clientId:\"(.{32})\",clientVersion:\"(.{20})\"")
+    private val clientVersionRegex = Regex("clientId:\"(.{32})\",clientVersion:\"(.{10,24})\"")
 
     data class Data(
         val serverTime: Long,
         val seed: String,
-        val buildVer: String,
-        val buildDate: String,
         val clientId: String,
         val clientVersion: String
     )
@@ -122,14 +117,11 @@ class Authentication(
         }
         val seed = seedRegex.find(jsBody)?.groupValues?.get(1)?.split(",")?.map { it.toInt() }
             ?: throw IllegalStateException("Failed to get seed")
-        val (buildVer, buildDate) = buildRegex.find(jsBody)?.destructured?.let {
-            it.component1() to it.component2()
-        } ?: ("unknown" to "unknown")
 
         val (client, clientVersion) = clientVersionRegex.find(jsBody)?.destructured
             ?: throw IllegalStateException("Failed to get client version")
 
-        return Data(serverTime, seedToSecret(seed), buildVer, buildDate, client, clientVersion)
+        return Data(serverTime, seedToSecret(seed), client, clientVersion)
     }
 
     private fun seedToSecret(list: List<Int>): String {

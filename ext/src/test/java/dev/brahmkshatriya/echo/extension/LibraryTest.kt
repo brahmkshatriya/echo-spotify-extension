@@ -31,7 +31,7 @@ class LibraryTest {
     private val extension = SpotifyExtension()
 
     private val mainThreadSurrogate = newSingleThreadContext("UI thread")
-    private val cookie = "sp_new=1; sp_landingref=https%3A%2F%2Fopen.spotify.com%2F; sp_t=e4b7be755a8db86b9bade36c99e67dae; sp_landing=https%3A%2F%2Fopen.spotify.com%2F%3Fsp_cid%3De4b7be755a8db86b9bade36c99e67dae%26device%3Ddesktop; sp_m=in-en; sp_dc=AQBWGXfPdkzReqEKXu0ge7zSny7L5_iA2xCsxAmfwz51UoQ89nFpBK_hRRrXH2IK5eiERHr_HuEohb0nCvOdkUVAvuBlhUSd8t48Q1QqUhrUHkS9K4ZpmzLyKsQa8rYhjJ3hykd41t6lQji-4YgKMaMUvANllSJZR20reeBflWym1oHBoetyjKRwCTKZzEko5iaDx_B50i_CXwUap4A; sp_key=03ded003-ae2e-4bfd-9cc2-fc82668d58bf"
+    private val cookie = ""
     private val user = User("", "", extras = mapOf("cookie" to cookie))
 
     @Before
