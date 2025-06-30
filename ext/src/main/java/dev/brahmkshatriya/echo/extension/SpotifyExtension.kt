@@ -109,15 +109,15 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     val queries by lazy { Queries(api) }
 
     override val webViewRequest = object : WebViewRequest.Cookie<List<User>> {
+        override val dontCache = true
         override val initialUrl =
-            "https://accounts.spotify.com/en/login".toRequest(mapOf(userAgent))
+            "https://accounts.spotify.com/en/login?allow_password=1".toRequest(mapOf(userAgent))
         override val stopUrlRegex =
-            Regex("(https://accounts\\.spotify\\.com/en/status)|(https://open\\.spotify\\.com)")
+            Regex("(https://accounts\\.spotify\\.com/.{2}/status.*)|(https://open\\.spotify\\.com)")
 
         val emailRegex = Regex("remember=([^;]+)")
         override suspend fun onStop(url: Request, cookie: String): List<User> {
             if (!cookie.contains("sp_dc")) throw Exception("Token not found")
-            println("Cookie: $cookie")
             api.setCookie(cookie)
             val accessToken = mercuryAccessToken.get()
             val storedToken = MercuryConnection.getStoredToken(accessToken)

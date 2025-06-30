@@ -95,7 +95,6 @@ class MercuryConnection private constructor() {
             .setAuthData(ByteString.copyFrom(Base64.decode(stored.token)))
             .build()
         apWelcome = getWelcome(credentials)
-        println("Session authenticated as ${apWelcome.canonicalUsername}")
     }
 
     private suspend fun send(cmd: Packet.Type, payload: ByteArray) {
@@ -103,7 +102,6 @@ class MercuryConnection private constructor() {
     }
 
     suspend fun getKey(gid: String, fileId: String): ByteArray {
-        println("Requesting key for gid: $gid, fileId: $fileId")
         val payload =
             AudioKeyManager.getPayload(ByteString.fromHex(gid), ByteString.fromHex(fileId))
         send(Packet.Type.RequestKey, payload)
@@ -111,7 +109,6 @@ class MercuryConnection private constructor() {
         while (keyPacket == null) {
             val packet = cipherPair.receiveEncoded(dataIn)
             val cmd = Packet.Type.parse(packet.cmd)
-            println("Received packet: $cmd, length: ${packet.payload.size}")
             when (cmd) {
                 Packet.Type.Ping -> runCatching {
                     send(Packet.Type.Pong, packet.payload)
@@ -147,13 +144,11 @@ class MercuryConnection private constructor() {
     private val mutex = Mutex()
     private suspend fun open() = mutex.withLock {
         withContext(Dispatchers.IO) {
-            println("connecting to Spotify Mercury...")
             val address = client.newCall(request).await().use { response ->
                 response.body.string()
                     .substringAfter("[").substringBefore("]").split(",")
                     .map { it.trim().removeSurrounding("\"") }.random()
             }
-            println("Resolved Mercury address: $address")
             socket = address.let { s ->
                 val split = s.split(":".toRegex()).dropLastWhile { it.isEmpty() }
                 Socket(split[0], split[1].toInt())
@@ -288,8 +283,6 @@ class MercuryConnection private constructor() {
                 Arrays.copyOfRange(data.toByteArray(), 0x14, 0x34),
                 Arrays.copyOfRange(data.toByteArray(), 0x34, 0x54)
             )
-
-            println("CipherPair initialized successfully!")
         }
     }
 

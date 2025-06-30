@@ -127,7 +127,7 @@ class SpotifyApi(
         }
     }
 
-    suspend fun call(
+    private suspend fun call(
         request: Request, ignore: Boolean = false, auth: String? = null
     ) = run {
         val req = if (auth == null) request
@@ -147,6 +147,6 @@ class SpotifyApi(
     companion object {
         fun urlEncode(data: String): String = URLEncoder.encode(data, "UTF-8")
         val userAgent =
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+            "user-agent" to "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36"
     }
 }
