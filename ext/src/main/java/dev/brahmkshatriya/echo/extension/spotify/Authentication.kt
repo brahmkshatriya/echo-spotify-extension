@@ -78,9 +78,9 @@ class Authentication(
         Regex("<script id=\"appServerConfig\" type=\"text/plain\">(.+?)</script>")
     private val serverTimeRegex = Regex("\"serverTime\":([^}]+)\\}")
     private val playerJsRegex =
-        Regex("https://open\\.spotifycdn\\.com/cdn/build/web-player/web-player\\..{8}\\.js")
+        Regex("https://open\\.spotifycdn\\.com/cdn/build/mobile-web-player/mobile-web-player\\..{8}\\.js")
     private val seedRegex = Regex("\\[(([0-9]{2},){16}[0-9]{2})]")
-    private val clientVersionRegex = Regex("clientId:\"(.{32})\",clientVersion:\"(.{10,24})\"")
+    private val clientVersionRegex = Regex("clientID:\"(.{32})\",clientVersion:\"(.{10,24})\"")
 
     data class Data(
         val serverTime: Long,

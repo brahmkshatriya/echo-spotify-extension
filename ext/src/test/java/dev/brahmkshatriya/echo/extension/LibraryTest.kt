@@ -32,7 +32,10 @@ class LibraryTest {
 
     private val mainThreadSurrogate = newSingleThreadContext("UI thread")
     private val cookie = ""
-    private val user = User("", "", extras = mapOf("cookie" to cookie))
+    private val user = User(
+        "", "",
+        extras = mapOf("cookie" to cookie, "stored_token" to "{\"username\":\"\",\"token\":\"\"}")
+    )
 
     @Before
     fun setUp() {
