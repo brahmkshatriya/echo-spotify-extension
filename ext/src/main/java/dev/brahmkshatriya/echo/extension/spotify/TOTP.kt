@@ -3,13 +3,8 @@ package dev.brahmkshatriya.echo.extension.spotify
 import java.lang.reflect.UndeclaredThrowableException
 import java.math.BigInteger
 import java.security.GeneralSecurityException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
-import kotlin.math.abs
 
 // Thanks to https://github.com/Adolar0042/ the goat
 object TOTP {
@@ -53,17 +48,14 @@ object TOTP {
         return otp.toString().padStart(returnDigits, '0')
     }
 
-    fun getCustomFormattedDate(): String {
-        val date = Date(1749049455000)
-        val sdf = SimpleDateFormat("EEE MMM dd yyyy HH:mm:ss", Locale.ENGLISH)
-        val tz = TimeZone.getDefault()
-        val offsetInMillis = tz.rawOffset
-        val sign = if (offsetInMillis >= 0) "+" else "-"
-        val absOffset = abs(offsetInMillis)
-        val hours = absOffset / (60 * 60 * 1000)
-        val minutes = (absOffset / (60 * 1000)) % 60
-        val gmtOffset = String.format(Locale.ENGLISH, "GMT%s%02d%02d", sign, hours, minutes)
-        val displayName = tz.getDisplayName(Locale.ENGLISH)
-        return "${sdf.format(date)} $gmtOffset (${displayName})"
+    fun convertToHex(input: String): String {
+        val obfuscated = input.mapIndexed { index, char ->
+            val key = index % 33 + 9
+            char.code xor key
+        }
+        val decimalString = obfuscated.joinToString("") { it.toString() }
+        return decimalString.map {
+            it.code.toString(16).padStart(2, '0')
+        }.joinToString("")
     }
 }

@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
+import dev.brahmkshatriya.echo.extension.spotify.TOTP.convertToHex
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import okhttp3.MediaType.Companion.toMediaType
@@ -11,7 +12,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
-import kotlin.text.Charsets.UTF_8
 
 class Authentication(
     private val api: SpotifyApi
@@ -70,7 +70,7 @@ class Authentication(
         val totp = TOTP.generateTOTP(secret, (time / 30000).toHexString().uppercase())
         val serverTotp = TOTP.generateTOTP(secret, (serverTime / 30).toHexString().uppercase())
         val url =
-            "https://open.spotify.com/api/token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=7"
+            "https://open.spotify.com/api/token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=11"
         return Triple(url, clientVersion, clientId)
     }
 
@@ -79,7 +79,6 @@ class Authentication(
     private val serverTimeRegex = Regex("\"serverTime\":([^}]+)\\}")
     private val playerJsRegex =
         Regex("https://open\\.spotifycdn\\.com/cdn/build/mobile-web-player/mobile-web-player\\..{8}\\.js")
-    private val seedRegex = Regex("\\[(([0-9]{2},){16}[0-9]{2})]")
     private val clientVersionRegex = Regex("clientID:\"(.{32})\",clientVersion:\"(.{10,24})\"")
 
     data class Data(
@@ -115,20 +114,11 @@ class Authentication(
             file.writeText(js)
             js
         }
-        val seed = seedRegex.find(jsBody)?.groupValues?.get(1)?.split(",")?.map { it.toInt() }
-            ?: throw IllegalStateException("Failed to get seed")
-
+        val seed = convertToHex("o-(I_J#Uik<n7HEFrS?X[")
         val (client, clientVersion) = clientVersionRegex.find(jsBody)?.destructured
             ?: throw IllegalStateException("Failed to get client version")
 
-        return Data(serverTime, seedToSecret(seed), client, clientVersion)
-    }
-
-    private fun seedToSecret(list: List<Int>): String {
-        return list.mapIndexed { index, byte -> byte xor ((index % 33) + 9) }
-            .joinToString("")
-            .toByteArray(UTF_8)
-            .joinToString("") { it.toUByte().toString(16) }
+        return Data(serverTime, seed, client, clientVersion)
     }
 
     suspend fun getToken() =
