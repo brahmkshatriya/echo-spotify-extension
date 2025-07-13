@@ -65,15 +65,16 @@ class Authentication(
 
     @OptIn(ExperimentalStdlibApi::class)
     private suspend fun getUrlAndClient(): Triple<String, String, String> {
-        val (serverTime, secret, clientId, clientVersion) = getDataFromSite()
+        val (serverTime, secret, version, clientId, clientVersion) = getDataFromSite()
         val time = System.currentTimeMillis()
         val totp = TOTP.generateTOTP(secret, (time / 30000).toHexString().uppercase())
         val serverTotp = TOTP.generateTOTP(secret, (serverTime / 30).toHexString().uppercase())
         val url =
-            "https://open.spotify.com/api/token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=11"
+            "https://open.spotify.com/api/token?reason=init&productType=web-player&totp=${totp}&totpServer=${serverTotp}&totpVer=$version"
         return Triple(url, clientVersion, clientId)
     }
 
+    private val secretsUrl = "https://raw.githubusercontent.com/itsmechinmoy/echo-extensions/refs/heads/main/noidea.txt"
     private val configRegex =
         Regex("<script id=\"appServerConfig\" type=\"text/plain\">(.+?)</script>")
     private val serverTimeRegex = Regex("\"serverTime\":([^}]+)\\}")
@@ -84,6 +85,7 @@ class Authentication(
     data class Data(
         val serverTime: Long,
         val seed: String,
+        val version: Int,
         val clientId: String,
         val clientVersion: String
     )
@@ -114,11 +116,13 @@ class Authentication(
             file.writeText(js)
             js
         }
-        val seed = convertToHex("o-(I_J#Uik<n7HEFrS?X[")
+        val string = httpClient.newCall(Request.Builder().url(secretsUrl).build()).await().body.string()
+        val secrets = json.decode<List<Secret>>(string)
+        val (secret, version) = secrets.random()
         val (client, clientVersion) = clientVersionRegex.find(jsBody)?.destructured
             ?: throw IllegalStateException("Failed to get client version")
 
-        return Data(serverTime, seed, client, clientVersion)
+        return Data(serverTime, convertToHex(secret), version, client, clientVersion)
     }
 
     suspend fun getToken() =
@@ -134,6 +138,12 @@ class Authentication(
         return (System.currentTimeMillis() < expiry)
     }
 
+
+    @Serializable
+    data class Secret(
+        val secret: String,
+        val version: Int
+    )
 
     @Serializable
     data class TokenResponse(
