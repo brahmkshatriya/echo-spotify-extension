@@ -1,12 +1,19 @@
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-
 plugins {
     id("java-library")
-    id("org.jetbrains.kotlin.jvm")
     id("maven-publish")
-    kotlin("plugin.serialization") version "1.9.22"
-    id("com.gradleup.shadow") version "8.3.0"
-    id("com.google.protobuf")
+    alias(libs.plugins.gradle.shadow)
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlinx.serialization)
+    alias(libs.plugins.google.protobuf)
+}
+
+dependencies {
+    compileOnly(libs.echo.common)
+    compileOnly(libs.kotlin.stdlib)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.echo.common)
 }
 
 java {
@@ -16,16 +23,6 @@ java {
 
 kotlin {
     jvmToolchain(17)
-}
-
-dependencies {
-    val libVersion: String by project
-    compileOnly("com.github.brahmkshatriya:echo:$libVersion")
-    compileOnly("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
-
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
-    testImplementation("com.github.brahmkshatriya:echo:$libVersion")
 }
 
 // Extension properties goto `gradle.properties` to set values
@@ -47,7 +44,7 @@ val extUpdateUrl: String? by project
 val gitHash = execute("git", "rev-parse", "HEAD").take(7)
 val gitCount = execute("git", "rev-list", "--count", "HEAD").toInt()
 val verCode = gitCount
-val verName = gitHash
+val verName = "v$gitHash"
 
 publishing {
     publications {
@@ -62,7 +59,7 @@ publishing {
 }
 
 tasks {
-    val shadowJar by getting(ShadowJar::class) {
+    shadowJar {
         archiveBaseName.set(extId)
         archiveVersion.set(verName)
         manifest {
@@ -90,6 +87,10 @@ tasks {
     }
 }
 
+fun execute(vararg command: String): String = providers.exec {
+    commandLine(*command)
+}.standardOutput.asText.get().trim()
+
 protobuf {
     protoc {
         artifact = "com.google.protobuf:protoc:3.24.4"
@@ -99,14 +100,4 @@ protobuf {
             task.builtins {}
         }
     }
-}
-
-fun execute(vararg command: String): String {
-    val processBuilder = ProcessBuilder(*command)
-    val hashCode = command.joinToString().hashCode().toString()
-    val output = File.createTempFile(hashCode, "")
-    processBuilder.redirectOutput(output)
-    val process = processBuilder.start()
-    process.waitFor()
-    return output.readText().dropLast(1)
 }

@@ -6,7 +6,8 @@ import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
 import dev.brahmkshatriya.echo.common.models.Date
 import dev.brahmkshatriya.echo.common.models.EchoMediaItem
-import dev.brahmkshatriya.echo.common.models.EchoMediaItem.Companion.toMediaItem
+import dev.brahmkshatriya.echo.common.models.Feed
+import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
 import dev.brahmkshatriya.echo.common.models.ImageHolder
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
 import dev.brahmkshatriya.echo.common.models.Playlist
@@ -69,12 +70,14 @@ fun Sections.toShelves(
         if (item.data.typename == Sections.Typename.BrowseRelatedSectionData)
             return@mapNotNull item.toCategory(queries)
 
+        val uri = item.uri ?: return@mapNotNull null
         val title = item.data.title?.transformedLabel ?: emptyTitle ?: ""
         val subtitle = item.data.subtitle?.transformedLabel
         when (item.data.typename) {
             null -> null
             Sections.Typename.BrowseGenericSectionData ->
                 Shelf.Lists.Items(
+                    id = uri,
                     title = title,
                     subtitle = subtitle,
                     list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem() }!!,
@@ -82,21 +85,23 @@ fun Sections.toShelves(
 
             Sections.Typename.HomeGenericSectionData, Sections.Typename.HomeSpotlightSectionData ->
                 Shelf.Lists.Items(
+                    id = uri,
                     title = title,
                     subtitle = subtitle,
                     list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem() }!!,
-                    more = if (item.uri != null && (item.sectionItems.totalCount ?: 0) > 3)
-                        paged { offset ->
-                            val sectionItem = queries.homeSection(item.uri, token, offset).json
-                                .data.homeSections.sections.first().sectionItems
-                            val next = sectionItem.pagingInfo?.nextOffset
-                            sectionItem.items!!.mapNotNull { it.content.toMediaItem() } to next
-                        }
-                    else null
+                    more = if ((item.sectionItems.totalCount ?: 0) > 3) paged<Shelf> { offset ->
+                        val sectionItem = queries.homeSection(uri, token, offset).json
+                            .data.homeSections.sections.first().sectionItems
+                        val next = sectionItem.pagingInfo?.nextOffset
+                        sectionItem.items!!.mapNotNull {
+                            it.content.toMediaItem()?.toShelf()
+                        } to next
+                    }.toFeed() else null
                 )
 
             Sections.Typename.BrowseGridSectionData -> {
                 Shelf.Lists.Categories(
+                    id = uri,
                     title = title,
                     subtitle = subtitle,
                     list = item.sectionItems?.items?.mapNotNull { it.toBrowseCategory(queries) }!!,
@@ -106,6 +111,7 @@ fun Sections.toShelves(
 
             Sections.Typename.BrowseRelatedSectionData -> throw IllegalStateException()
             Sections.Typename.HomeShortsSectionData -> Shelf.Lists.Items(
+                id = uri,
                 title = title,
                 subtitle = subtitle,
                 list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem() }!!,
@@ -152,10 +158,8 @@ fun Item.Playlist.toPlaylist(): Playlist? {
         description = desc,
         subtitle = ownerV2?.data?.name,
         cover = images?.items?.firstOrNull()?.toImageHolder(),
-        authors = listOfNotNull(
-            (ownerV2?.data?.toMediaItem() as? EchoMediaItem.Profile.UserItem)?.user
-        ),
-        tracks = content?.totalCount,
+        authors = listOfNotNull(ownerV2?.data?.toMediaItem() as? Artist),
+        trackCount = content?.totalCount,
         duration = content?.toDuration(),
         creationDate = content?.items?.map { it.addedAt?.toDate() }?.maxByOrNull { it ?: Date(0) }
     )
@@ -176,7 +180,7 @@ fun Item.PseudoPlaylist.toPlaylist(): Playlist? {
         title = name ?: return null,
         isEditable = true,
         cover = image?.toImageHolder(),
-        tracks = count
+        trackCount = count
     )
 }
 
@@ -196,7 +200,7 @@ fun IAlbum.toAlbum(n: String? = null): Album? {
         subtitle = date?.year?.toString(),
         artists = artists.toArtists(),
         cover = coverArt?.toImageHolder(),
-        tracks = tracksV2?.totalCount,
+        trackCount = tracksV2?.totalCount,
         duration = tracksV2?.toDuration(),
         releaseDate = date?.toDate(),
         description = buildString {
@@ -243,25 +247,24 @@ private fun String.toDate(precision: String? = null): Date {
     return Date(year, month, day)
 }
 
-fun IArtist.toArtist(subtitle: String? = null): Artist? {
+fun IArtist.toArtist(type: String? = null): Artist? {
     return Artist(
         id = uri ?: return null,
         name = profile?.name ?: return null,
         cover = visuals?.avatarImage?.toImageHolder(),
-        subtitle = subtitle,
-        followers = stats?.followers?.toInt(),
-        description = profile?.biography?.text?.removeHtml(),
-        isFollowing = saved ?: false
+        subtitle = type,
+        bio = profile?.biography?.text?.removeHtml()
     )
 }
 
 fun Artists?.toArtists(subtitle: String? = null) =
     this?.items?.mapNotNull { it.toArtist(subtitle) } ?: listOf()
 
-fun Item.Podcast.toArtist(): Artist? {
-    return Artist(
+fun Item.Podcast.toAlbum(): Album? {
+    return Album(
         id = uri ?: return null,
-        name = name ?: return null,
+        title = name ?: return null,
+        type = Album.Type.Show,
         subtitle = "Podcast",
         cover = coverArt?.toImageHolder(),
     )
@@ -271,6 +274,7 @@ fun Item.Audiobook.toAlbum(): Album? {
     return Album(
         id = uri ?: return null,
         title = name ?: return null,
+        type = Album.Type.Book,
         cover = coverArt?.toImageHolder(),
         description = description?.removeHtml(),
         subtitle = "Audiobook",
@@ -279,47 +283,52 @@ fun Item.Audiobook.toAlbum(): Album? {
 }
 
 fun Artists.toShelf(
-    title: String, subtitle: String? = null, more: PagedData<EchoMediaItem>
+    id: String, title: String, subtitle: String? = null, more: Feed<Shelf>
 ): Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
+        id = id,
         title = title,
         subtitle = subtitle,
-        list = items.mapNotNull { it.toArtist(subtitle)?.toMediaItem() },
+        list = items.mapNotNull { it.toArtist(subtitle) },
         more = if (items.size > 3) more else null
     )
 }
 
-fun Albums.toShelf(title: String, more: PagedData<EchoMediaItem>): Shelf? {
+fun Albums.toShelf(id: String, title: String, more: Feed<Shelf>): Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
+        id = id,
         title = title,
-        list = items.mapNotNull { it.releases?.items?.firstOrNull()?.toAlbum()?.toMediaItem() },
+        list = items.mapNotNull { it.releases?.items?.firstOrNull()?.toAlbum() },
         more = if (items.size > 3) more else null
     )
 }
 
-fun Releases.toShelf(title: String, more: PagedData<EchoMediaItem>): Shelf? {
+fun Releases.toShelf(id: String, title: String, more: Feed<Shelf>): Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
+        id = id,
         title = title,
-        list = items.mapNotNull { it.toAlbum()?.toMediaItem() },
+        list = items.mapNotNull { it.toAlbum() },
         more = if (items.size > 3) more else null
     )
 }
 
-private fun ItemsV2.toShelf(title: String, more: PagedData<EchoMediaItem>): Shelf? {
+private fun ItemsV2.toShelf(id: String, title: String, more: Feed<Shelf>): Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
+        id = id,
         title = title,
         list = items.mapNotNull { it.toMediaItem() },
         more = if (items.size > 3) more else null
     )
 }
 
-fun TracksV2.toTrackShelf(title: String): Shelf? {
+fun TracksV2.toTrackShelf(id: String, title: String): Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Tracks(
+        id = id,
         title = title,
         list = items.mapNotNull { it.track?.toTrack() }
     )
@@ -327,11 +336,11 @@ fun TracksV2.toTrackShelf(title: String): Shelf? {
 
 fun pagedItemsV2(
     block: suspend (offset: Int) -> ItemsV2
-): PagedData<EchoMediaItem> {
+): PagedData<Shelf> {
     var count = 0L
     return paged { offset ->
         val res = block(offset)
-        val items = res.items?.mapNotNull { it.toMediaItem() } ?: emptyList()
+        val items = res.items?.mapNotNull { it.toMediaItem()?.toShelf() } ?: emptyList()
         val total = res.totalCount ?: 0
         count += items.size
         items to if (count < total) count else null
@@ -340,11 +349,11 @@ fun pagedItemsV2(
 
 fun pagedArtists(
     block: suspend (offset: Int) -> Artists
-): PagedData<EchoMediaItem> {
+): PagedData<Shelf> {
     var count = 0L
     return paged { offset ->
         val res = block(offset)
-        val items = res.items?.mapNotNull { it.toArtist()?.toMediaItem() } ?: emptyList()
+        val items = res.items?.mapNotNull { it.toArtist()?.toShelf() } ?: emptyList()
         val total = res.totalCount ?: 0
         count += items.size
         items to if (count < total) count else null
@@ -353,86 +362,96 @@ fun pagedArtists(
 
 fun pagedAlbums(
     block: suspend (offset: Int) -> Albums
-): PagedData<EchoMediaItem> {
+): PagedData<Shelf> {
     var count = 0L
     return paged { offset ->
         val res = block(offset)
         val items = res.items?.map {
-            it.releases?.items?.firstOrNull()?.toAlbum()?.toMediaItem()!!
+            it.releases?.items?.firstOrNull()?.toAlbum()!!
         } ?: emptyList()
         val total = res.totalCount ?: 0
         count += items.size
-        items to if (count < total) count else null
+        items.map { it.toShelf() } to if (count < total) count else null
     }
 }
 
 fun IArtist.toShelves(queries: Queries): List<Shelf> {
     val uri = uri ?: return emptyList()
     return listOfNotNull(
-        discography?.topTracks?.toTrackShelf("Popular Tracks"),
-        discography?.latest?.toAlbum()?.toMediaItem()?.toShelf(true),
+        discography?.topTracks?.toTrackShelf("${uri}_top_tracks", "Top Tracks"),
+        discography?.latest?.toAlbum()?.toShelf(),
         discography?.popularReleasesAlbums?.toShelf(
+            "${uri}_popular",
             "Popular Albums",
             pagedAlbums {
                 queries.queryArtistDiscographyAll(uri, it)
                     .json.data.artistUnion.discography?.all!!
-            }
+            }.toFeed()
         ),
         relatedContent?.featuringV2?.toShelf(
+            "${uri}_featuring",
             "Featuring ${profile?.name}",
             pagedItemsV2 {
                 queries.queryArtistFeaturing(uri, it)
                     .json.data.artistUnion.relatedContent?.featuringV2!!
-            }
+            }.toFeed()
         ),
         discography?.albums?.toShelf(
+            "${uri}_albums",
             "Albums",
             pagedAlbums {
                 queries.queryArtistDiscographyAlbums(uri, it)
                     .json.data.artistUnion.discography?.albums!!
-            }
+            }.toFeed()
         ),
         discography?.singles?.toShelf(
+            "${uri}_singles",
             "Singles",
             pagedAlbums {
                 queries.queryArtistDiscographySingles(uri, it)
                     .json.data.artistUnion.discography?.singles!!
-            }
+            }.toFeed()
         ),
         discography?.compilations?.toShelf(
+            "${uri}_compilations",
             "Compilations",
             pagedAlbums {
                 queries.queryArtistDiscographyCompilations(uri, it)
                     .json.data.artistUnion.discography?.compilations!!
-            }
+            }.toFeed()
         ),
         profile?.playlistsV2?.toShelf(
+            "${uri}_playlists",
             "Playlists",
             pagedItemsV2 {
                 queries.queryArtistPlaylists(uri, it)
                     .json.data.artistUnion.profile?.playlistsV2!!
-            }
+            }.toFeed()
         ),
         relatedContent?.appearsOn?.toShelf(
+            "${uri}_appears_on",
             "Appears On",
             pagedAlbums {
                 queries.queryArtistAppearsOn(uri, it)
                     .json.data.artistUnion.relatedContent?.appearsOn!!
-            }
+            }.toFeed()
         ),
         relatedContent?.discoveredOnV2?.toShelf(
+            "${uri}_discovered_on",
             "Discovered On",
             pagedItemsV2 {
                 queries.queryArtistDiscoveredOn(uri, it)
                     .json.data.artistUnion.relatedContent?.discoveredOnV2!!
-            }
+            }.toFeed()
         ),
         relatedContent?.relatedArtists?.toShelf(
-            "Artist", "Artist",
+            "${uri}_related_artists",
+            "Artist",
+            "Artist",
             pagedArtists {
                 queries.queryArtistRelated(uri, it)
                     .json.data.artistUnion.relatedContent?.relatedArtists!!
-            }
+            }.toFeed()
         )
     )
 }
@@ -441,49 +460,47 @@ val likedPlaylist = Playlist(
     "spotify:collection:tracks",
     "Liked Songs",
     true,
-    "https://misc.scdn.co/liked-songs/liked-songs-300.png".toImageHolder()
+    cover = "https://misc.scdn.co/liked-songs/liked-songs-300.png".toImageHolder()
 )
 
 fun Wrapper.toMediaItem() = when (uri) {
-    "spotify:user:@:collection" -> likedPlaylist.toMediaItem()
-
+    "spotify:user:@:collection" -> likedPlaylist
     else -> data?.toMediaItem()
 }
 
 fun Item.toMediaItem(): EchoMediaItem? {
     return when (this) {
-        is Item.Album -> toAlbum()?.toMediaItem()
+        is Item.Album -> toAlbum()
 
         is Item.PreRelease -> Album(
             id = preReleaseContent?.uri ?: return null,
             title = preReleaseContent.name ?: return null,
-            subtitle = "Pre-Release",
+            type = Album.Type.PreRelease,
             artists = preReleaseContent.artists.toArtists(),
             cover = preReleaseContent.coverArt?.toImageHolder()
-        ).toMediaItem()
+        )
 
-        is Item.PseudoPlaylist -> toPlaylist()?.toMediaItem()
+        is Item.PseudoPlaylist -> toPlaylist()
 
-        is Item.Playlist -> toPlaylist()?.toMediaItem()
+        is Item.Playlist -> toPlaylist()
 
-        is Item.Artist -> toArtist("Artist")?.toMediaItem()
+        is Item.Artist -> toArtist("Artist")
 
-        is Item.Track -> toTrack()?.toMediaItem()
+        is Item.Track -> toTrack()
 
         is Item.Episode -> Track(
             id = uri ?: return null,
             title = name ?: return null,
+            type = Track.Type.Podcast,
             cover = coverArt?.toImageHolder(),
             description = description?.removeHtml(),
-            artists = listOfNotNull(
-                podcastV2?.data?.toArtist()?.toMediaItem()?.artist
-            ),
+            album = podcastV2?.data?.toAlbum(),
             isExplicit = contentRating?.label == Label.EXPLICIT,
             duration = duration?.totalMilliseconds,
             releaseDate = releaseDate?.toDate(),
-        ).toMediaItem()
+        )
 
-        is Item.Podcast -> toArtist()?.toMediaItem()
+        is Item.Podcast -> toAlbum()
 
         is Item.Chapter -> Track(
             id = uri ?: return null,
@@ -493,17 +510,16 @@ fun Item.toMediaItem(): EchoMediaItem? {
             album = audiobookV2?.data?.toAlbum(),
             isExplicit = contentRating?.label == Label.EXPLICIT,
             duration = duration?.totalMilliseconds,
-        ).toMediaItem()
+        )
 
-        is Item.Audiobook -> toAlbum()?.toMediaItem()
-
+        is Item.Audiobook -> toAlbum()
 
         is Item.User -> Artist(
             id = uri ?: return null,
             name = displayName ?: name ?: username ?: return null,
             subtitle = "User",
             cover = avatar?.toImageHolder()
-        ).toMediaItem()
+        )
 
         is Item.BrowseClientFeature -> null
         is Item.BrowseSectionContainer -> null
@@ -543,12 +559,13 @@ fun ItemsItem.toBrowseCategory(queries: Queries): Shelf.Category? {
     val item = content.data
     if (item !is Item.BrowseSectionContainer) return null
     return Shelf.Category(
+        id = uri,
         title = item.data?.cardRepresentation?.title?.transformedLabel!!,
-        items = paged {
+        feed = paged {
             val sections = queries.browsePage(uri, it).json.data.browse.sections
             val next = sections.pagingInfo?.nextOffset
             sections.toShelves(queries) to next
-        }
+        }.toFeed()
     )
 }
 
@@ -559,30 +576,37 @@ fun ProfileAttributes.toUser() = User(
 )
 
 private val filteredCategory = listOf("PODCASTS", "AUDIOBOOKS")
-fun SearchDesktop.SearchV2.toShelvesAndTabs(queries: Queries): Pair<PagedData<Shelf>, List<Tab>> {
+fun SearchDesktop.SearchV2.toShelvesAndTabs(query: String, queries: Queries): Pair<PagedData<Shelf>, List<Tab>> {
     val tabs = listOf(Tab("ALL", "All")) + chipOrder?.items?.map { chip ->
         Tab(chip.typeName!!, chip.typeName.lowercase().replaceFirstChar { it.uppercaseChar() })
     }!!
 
     val shelves = listOfNotNull(
         topResultsV2?.itemsV2?.firstOrNull()?.item?.toMediaItem()?.toShelf(),
-        tracksV2?.items?.toTrackShelf("Songs"),
-        topResultsV2?.featured?.toMediaShelf("Featured"),
-        artists?.toMediaShelf("Artists"),
-        albumsV2?.toMediaShelf("Albums"),
-        playlists?.toMediaShelf("Playlists"),
-        podcasts?.toMediaShelf("Podcasts"),
-        episodes?.toMediaShelf("Episodes"),
-        users?.toMediaShelf("Users"),
-        genres?.toCategoryShelf("Genres", queries)
+        tracksV2?.items?.toTrackShelf("${query}_songs","Songs"),
+        topResultsV2?.featured?.toMediaShelf("${query}_featured","Featured"),
+        artists?.toMediaShelf("${query}_artists","Artists"),
+        albumsV2?.toMediaShelf("${query}_albums","Albums"),
+        playlists?.toMediaShelf("${query}_playlists","Playlists"),
+        podcasts?.toMediaShelf("${query}_podcasts","Podcasts"),
+        episodes?.toMediaShelf("${query}_episodes","Episodes"),
+        users?.toMediaShelf("${query}_users","Users"),
+        genres?.toCategoryShelf("${query}_genres","Genres", queries)
     )
     return PagedData.Single { shelves } to tabs.filter { it.id !in filteredCategory }
 }
 
-private fun SearchDesktop.SearchItems.toCategoryShelf(title: String, queries: Queries): Shelf? {
+private fun SearchDesktop.SearchItems.toCategoryShelf(
+    id: String, title: String, queries: Queries
+): Shelf? {
     if (items.isNullOrEmpty()) return null
     val items = items.mapNotNull { it.toGenreCategory(queries) }
-    return Shelf.Lists.Categories(title = title, list = items, type = Shelf.Lists.Type.Grid)
+    return Shelf.Lists.Categories(
+        id = id,
+        title = title,
+        list = items,
+        type = Shelf.Lists.Type.Grid
+    )
 }
 
 fun SearchDesktop.SearchItems?.toItemShelves(): Pair<List<Shelf>, Long?> {
@@ -599,7 +623,7 @@ fun SearchDesktop.TracksV2?.toItemShelves(): Pair<List<Shelf>, Long?> {
     val items = items
     val next = pagingInfo?.nextOffset
     return items.mapNotNull { item ->
-        item.item?.data?.toTrack()?.toMediaItem()?.toShelf()
+        item.item?.data?.toTrack()?.toShelf()
     } to next
 }
 
@@ -617,28 +641,35 @@ private fun Wrapper.toGenreCategory(queries: Queries): Shelf.Category? {
     if (item !is Item.Genre) return null
     val uri = item.uri!!
     return Shelf.Category(
+        id = uri,
         title = item.name ?: return null,
-        items = paged {
+        feed = paged {
             val sections = queries.browsePage(uri, it).json.data.browse.sections
             val next = sections.pagingInfo?.nextOffset
             sections.toShelves(queries) to next
-        }
+        }.toFeed()
     )
 }
 
-private fun SearchDesktop.SearchItems.toMediaShelf(title: String) = items?.toMediaShelf(title)
+private fun SearchDesktop.SearchItems.toMediaShelf(id: String, title: String) =
+    items?.toMediaShelf(id, title)
 
-private fun List<Wrapper>?.toMediaShelf(title: String): Shelf? {
+private fun List<Wrapper>?.toMediaShelf(id: String, title: String): Shelf? {
     if (this.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
+        id = id,
         title = title,
         list = mapNotNull { it.toMediaItem() }
     )
 }
 
-private fun List<SearchDesktop.TrackWrapperWrapper>?.toTrackShelf(title: String): Shelf? {
+private fun List<SearchDesktop.TrackWrapperWrapper>?.toTrackShelf(
+    id: String,
+    title: String
+): Shelf? {
     if (this.isNullOrEmpty()) return null
     return Shelf.Lists.Tracks(
+        id = id,
         title = title,
         list = mapNotNull { it.item?.data?.toTrack() }
     )
@@ -729,9 +760,9 @@ fun Metadata4Track.toTrack(
             Artist("spotify:artist:$artistId", name, subtitle = subtitle)
         } ?: listOf(),
         album = alb,
-        albumNumber = number,
+        albumOrderNumber = number,
         albumDiscNumber = discNumber,
-        irsc = externalId?.firstOrNull()?.id,
+        isrc = externalId?.firstOrNull()?.id,
         releaseDate = alb?.releaseDate,
         description = album?.label,
         isExplicit = explicit == true,
@@ -743,8 +774,10 @@ fun UserProfileView.toArtist(): Artist? {
         id = uri ?: return null,
         name = name ?: return null,
         cover = imageUrl?.toImageHolder(),
-        followers = followersCount?.toInt(),
-        description = "Total Public Playlists Count : $totalPublicPlaylistsCount",
+        bio = "Total Public Playlists Count : $totalPublicPlaylistsCount",
+        extras = mapOf(
+            "followers" to followersCount?.toString().orEmpty(),
+        )
     )
 }
 
@@ -758,10 +791,7 @@ fun UserProfileView.toShelf(): Shelf? {
     if (publicPlaylists.isNullOrEmpty()) return null
     val playlists = publicPlaylists.mapNotNull {
         val owner = it.ownerUri?.let { uri ->
-            User(
-                id = uri,
-                name = it.ownerName!!
-            )
+            Artist(id = uri, name = it.ownerName!!)
         }
         Playlist(
             id = it.uri ?: return@mapNotNull null,
@@ -769,21 +799,21 @@ fun UserProfileView.toShelf(): Shelf? {
             false,
             cover = it.imageUrl?.toImage()?.toImageHolder(),
             authors = listOfNotNull(owner)
-        ).toMediaItem()
+        )
     }
-    return Shelf.Lists.Items("Public Playlists", playlists)
+    return Shelf.Lists.Items("${uri}_public_playlists", "Public Playlists", playlists)
 }
 
-fun UserFollowers.toShelf(title: String): Shelf? {
+fun UserFollowers.toShelf(id: String, title: String): Shelf? {
     if (profiles.isNullOrEmpty()) return null
     val users = profiles.mapNotNull {
         Artist(
             id = it.uri ?: return@mapNotNull null,
             name = it.name ?: return@mapNotNull null,
             cover = it.imageUrl?.toImageHolder()
-        ).toMediaItem()
+        )
     }
-    return Shelf.Lists.Items(title, users)
+    return Shelf.Lists.Items(id, title, users)
 }
 
 fun pagedLibrary(
@@ -802,7 +832,8 @@ fun LibraryV3.Item.toShelf(queries: Queries): Shelf? {
         val folder = item.data as Item.Folder
         val folderUri = folder.uri ?: return null
         Shelf.Category(
-            folder.name!!, pagedLibrary(queries, null, folderUri)
+            folderUri, folder.name!!,
+            pagedLibrary(queries, null, folderUri).toFeed()
         )
     } else item?.data?.toMediaItem()?.toShelf()
 }

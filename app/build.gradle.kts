@@ -1,13 +1,21 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
 }
 
 dependencies {
     implementation(project(":ext"))
-    val libVersion: String by project
-    compileOnly("com.github.brahmkshatriya:echo:$libVersion")
-    compileOnly("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
+    compileOnly(libs.echo.common)
+    compileOnly(libs.kotlin.stdlib)
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 val extType: String by project
@@ -29,13 +37,6 @@ val gitCount = execute("git", "rev-list", "--count", "HEAD").toInt()
 val verCode = gitCount
 val verName = "v$gitHash"
 
-tasks.register("uninstall") {
-    android.run {
-        execute(
-            adbExecutable.absolutePath, "shell", "pm", "uninstall", defaultConfig.applicationId!!
-        )
-    }
-}
 
 val outputDir = file("${layout.buildDirectory.asFile.get()}/generated/proguard")
 val generatedProguard = file("${outputDir}/generated-rules.pro")
@@ -45,9 +46,9 @@ tasks.register("generateProguardRules") {
         outputDir.mkdirs()
         generatedProguard.writeText(
             """
-            -dontobfuscate
-            -keep,allowoptimization class dev.brahmkshatriya.echo.extension.$extClass
-            """.trimIndent()
+                -dontobfuscate
+                -keep,allowoptimization class dev.brahmkshatriya.echo.extension.$extClass
+                """.trimMargin()
         )
     }
 }
@@ -58,14 +59,14 @@ tasks.named("preBuild") {
 
 android {
     namespace = "dev.brahmkshatriya.echo.extension"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig {
         applicationId = "dev.brahmkshatriya.echo.extension.$extId"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
 
         manifestPlaceholders.apply {
-            put("type", "dev.brahmkshatriya.echo.${extType}")
+            put("type", "dev.brahmkshatriya.echo.$extType")
             put("id", extId)
             put("class_path", "dev.brahmkshatriya.echo.extension.$extClass")
             put("version", verName)
@@ -90,23 +91,8 @@ android {
             )
         }
     }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
-    }
 }
 
-fun execute(vararg command: String): String {
-    val processBuilder = ProcessBuilder(*command)
-    val hashCode = command.joinToString().hashCode().toString()
-    val output = File.createTempFile(hashCode, "")
-    processBuilder.redirectOutput(output)
-    val process = processBuilder.start()
-    process.waitFor()
-    return output.readText().dropLast(1)
-}
+fun execute(vararg command: String): String = providers.exec {
+    commandLine(*command)
+}.standardOutput.asText.get().trim()

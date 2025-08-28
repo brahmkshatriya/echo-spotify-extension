@@ -13,7 +13,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.internal.closeQuietly
-import okhttp3.internal.commonIsSuccessful
 import java.io.File
 import java.net.URLEncoder
 
@@ -27,9 +26,9 @@ class SpotifyApi(
     private val authMutex = Mutex()
     val auth = Authentication(this)
     private var _cookie: String? = null
-    suspend fun setCookie(cookie: String?) {
+    fun setCookie(cookie: String?) {
         _cookie = cookie
-        authMutex.withLock { auth.clear() }
+        synchronized(auth) { auth.clear() }
     }
 
     var storedToken: StoredToken? = null
@@ -133,7 +132,7 @@ class SpotifyApi(
         val req = if (auth == null) request
         else request.newBuilder().addHeader("Authorization", "Bearer $auth").build()
         val res = client.newCall(req).await()
-        if (ignore || res.commonIsSuccessful) res
+        if (ignore || res.isSuccessful) res
         else {
             res.closeQuietly()
             throw Exception("${res.code}: Failed to call - ${req.url}")

@@ -43,7 +43,7 @@ sealed interface Item {
         val name: String? = null,
         val uri: String? = null,
         val image: Artwork? = null,
-        val count: Int? = null,
+        val count: Long? = null,
     ) : Item
 
     @Serializable
@@ -66,7 +66,7 @@ sealed interface Item {
         data class Content(
             val items: List<Item>? = null,
             val pagingInfo: PagingInfo? = null,
-            val totalCount: Int? = null,
+            val totalCount: Long? = null,
         )
 
         @Serializable

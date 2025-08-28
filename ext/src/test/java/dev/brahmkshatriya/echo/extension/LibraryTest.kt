@@ -2,8 +2,8 @@ package dev.brahmkshatriya.echo.extension
 
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
-import dev.brahmkshatriya.echo.common.models.EchoMediaItem
-import dev.brahmkshatriya.echo.common.models.EchoMediaItem.Companion.toMediaItem
+import dev.brahmkshatriya.echo.common.models.Feed.Companion.loadAll
+import dev.brahmkshatriya.echo.common.models.Feed.Companion.pagedDataOfFirst
 import dev.brahmkshatriya.echo.common.models.Playlist
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Tab
@@ -18,7 +18,6 @@ import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert
@@ -42,8 +41,8 @@ class LibraryTest {
         Dispatchers.setMain(mainThreadSurrogate)
         extension.setSettings(MockedSettings())
         runBlocking {
+            extension.setLoginUser(user)
             extension.onExtensionSelected()
-            extension.onSetLoginUser(user)
         }
     }
 
@@ -72,18 +71,17 @@ class LibraryTest {
             is Shelf.Item -> println(this)
             is Shelf.Lists<*> -> {
                 println("${this.title} : ${this.list.size}")
-                println("More: ${this.more?.loadList(null)?.data?.size}")
+                println("More: ${this.more?.loadAll()?.size}")
             }
         }
     }
 
     @Test
     fun testSearchEmpty() = testIn("Testing Empty Search") {
-        val tab = extension.searchTabs("").firstOrNull()
-        val feed = extension.searchFeed("", tab)
-        val shelves = feed.pagedData.loadAll()
+        val feed = extension.loadSearchFeed("")
+        val shelves = feed.loadAll()
         val shelf = shelves.first() as Shelf.Lists.Categories
-        val load = shelf.list.first().items!!.loadList(null).data
+        val load = shelf.list.first().feed!!.pagedDataOfFirst().loadPage(null).data
         load.forEach { it.print() }
     }
 
@@ -93,16 +91,16 @@ class LibraryTest {
         val searchQuery = "Vump"
         val quickSearch = extension.quickSearch(searchQuery)
         quickSearch.forEach { println(it) }
-        val feed = extension.searchFeed(searchQuery, Tab("USERS", ""))
-        val page = feed.pagedData.loadList(null)
+        val feed = extension.loadSearchFeed(searchQuery).getPagedData(Tab("USERS", ""))
+        val page = feed.pagedData.loadPage(null)
         println("Page ${page.continuation}: ${page.data}")
-        val page2 = feed.pagedData.loadList(page.continuation)
+        val page2 = feed.pagedData.loadPage(page.continuation)
         println("Page ${page.continuation}: ${page2.data}")
     }
 
     @Test
     fun getTrack() = testIn("Get Track") {
-        val track = extension.loadTrack(Track("spotify:track:0TPF2GBCH08gLC40qvDjvD", ""))
+        val track = extension.loadTrack(Track("spotify:track:0TPF2GBCH08gLC40qvDjvD", ""), false)
         println(track)
         val lyrics = extension.searchTrackLyrics("", track).loadAll()
         println(lyrics)
@@ -115,8 +113,8 @@ class LibraryTest {
 
     @Test
     fun trackShelves() = testIn("Track Shelves") {
-        val track = extension.loadTrack(Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", ""))
-        val shelves = extension.getShelves(track).loadList(null).data
+        val track = extension.loadTrack(Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", ""), false)
+        val shelves = extension.loadFeed(track).loadAll()
         shelves.forEach { it.print() }
     }
 
@@ -138,7 +136,7 @@ class LibraryTest {
         println(playlist)
         val tracks = extension.loadTracks(playlist).loadAll()
         println("Tracks: ${tracks.size}")
-//        val shelves = extension.getShelves(playlist).loadList(null)?.data
+//        val shelves = extension.getShelves(playlist).loadPage(null)?.data
 //        println("Shelves: ${shelves.size}")
 //        shelves.forEach { it.print() }
     }
@@ -154,20 +152,21 @@ class LibraryTest {
             Album("spotify:album:7DVnTw8oQn2p2dD99Zps4i", "")
         )
         println(json.encodeToString(album))
-//        val tracks = extension.loadTracks(album).loadList(null)?.data
+//        val tracks = extension.loadTracks(album).loadPage(null)?.data
 //        println("Tracks: ${tracks.size}")
-//        val shelves = extension.getShelves(album).loadList(null)?.data
+//        val shelves = extension.getShelves(album).loadPage(null)?.data
 //        println("Shelves: ${shelves.size}")
 //        shelves.forEach { it.print() }
     }
 
     @Test
     fun testHomeFeed() = testIn("Home Feed Test") {
-        val tabs = extension.getHomeTabs()
+        val feed = extension.loadHomeFeed()
+        val tabs = feed.tabs
         println(tabs)
-        extension.getHomeFeed(null).pagedData.loadAll().forEach { it.print() }
+        feed.getPagedData(null).pagedData.loadAll().forEach { it.print() }
         tabs.forEach { tab ->
-            extension.getHomeFeed(tab).pagedData.loadAll().forEach { it.print() }
+            feed.getPagedData(tab).pagedData.loadAll().forEach { it.print() }
         }
     }
 
@@ -188,7 +187,7 @@ class LibraryTest {
             Artist("spotify:artist:3mVL1qynaYs31rgyDTytkS", "")
         )
         println(artist)
-        val shelves = extension.getShelves(artist).loadList(null).data
+        val shelves = extension.loadFeed(artist).pagedDataOfFirst().loadPage(null).data
         println("Shelves: ${shelves.size}")
         shelves.forEach { it.print() }
     }
@@ -199,29 +198,27 @@ class LibraryTest {
             Artist("spotify:user:aeivypek9coyo5quqvlgn4x3g", "")
         )
         println(user)
-        val shelves = extension.getShelves(user).loadList(null).data
+        val shelves = extension.loadFeed(user).pagedDataOfFirst().loadPage(null).data
         println("Shelves: ${shelves.size}")
         shelves.forEach { it.print() }
     }
 
     @Test
     fun testSaveItem() = testIn("Save Item Test") {
-        val track = Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", "").toMediaItem()
+        val track = Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", "")
         extension.saveToLibrary(track, true)
     }
 
     @Test
     fun testRemoveItem() = testIn("Remove Item Test") {
-        val track = Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", "").toMediaItem()
+        val track = Track("spotify:track:71NTIlx3GOoJdDDChHcMx3", "")
         extension.saveToLibrary(track, false)
     }
 
     @Test
     fun testLibrary() = testIn("Library Test") {
-        val tabs = extension.getLibraryTabs()
-        val feed = extension.getLibraryFeed(tabs.first()).pagedData.loadAll()
-        val liked =
-            ((feed.first() as Shelf.Item).media as EchoMediaItem.Lists.PlaylistItem).playlist
+        val feed = extension.loadLibraryFeed().pagedDataOfFirst().loadAll()
+        val liked = (feed.first() as Shelf.Item).media as Playlist
         println(liked)
         val loaded = extension.loadPlaylist(liked)
         println(loaded)
@@ -267,18 +264,18 @@ class LibraryTest {
 
     @Test
     fun likeTrack() = testIn("Like Track Test") {
-        val track = Track("spotify:track:76I3PmbGZazzNlEwlp1y85", "")
-        println(extension.loadTrack(track).isLiked)
-        extension.likeTrack(track, true)
-        println(extension.loadTrack(track).isLiked)
-        extension.likeTrack(track, false)
-        println(extension.loadTrack(track).isLiked)
+        val track = extension.loadTrack(Track("spotify:track:76I3PmbGZazzNlEwlp1y85", ""), false)
+        println(extension.isItemLiked(track))
+        extension.likeItem(track, true)
+        println(extension.isItemLiked(track))
+        extension.likeItem(track, false)
+        println(extension.isItemLiked(track))
     }
 
     @Test
     fun testSongChange() = testIn("Testing Song Change") {
         val track = Track("spotify:track:5h2SrRiHKiONIX3TkYOQII", "")
-        val media = extension.loadTrack(track)
+        val media = extension.loadTrack(track, false)
         println(media)
     }
 }

@@ -227,7 +227,7 @@ data class Discography(
 @Serializable
 data class TracksV2(
     val items: List<TrackItem>? = null,
-    val totalCount: Int? = null,
+    val totalCount: Long? = null,
 )
 
 @Serializable

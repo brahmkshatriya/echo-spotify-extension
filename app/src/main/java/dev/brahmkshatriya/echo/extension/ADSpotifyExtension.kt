@@ -22,14 +22,14 @@ class ADSpotifyExtension : SpotifyExtension() {
     override val showWidevineStreams: Boolean
         get() = setting.getBoolean("show_widevine_streams") ?: super.showWidevineStreams
 
-    override val settingItems
-        get() = listOf(
+    override suspend fun getSettingItems(): List<SettingSwitch> {
+        return listOf(
             SettingSwitch(
                 "Show Widevine Streams",
                 "show_widevine_streams",
                 "Whether to show Widevine streams in song servers, they use on device drm decryption. Might not be supported on all devices.",
                 showWidevineStreams
             )
-        ) + super.settingItems
-
+        ) + super.getSettingItems()
+    }
 }
