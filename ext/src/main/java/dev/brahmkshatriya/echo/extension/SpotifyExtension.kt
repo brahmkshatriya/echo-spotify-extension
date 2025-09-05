@@ -62,6 +62,9 @@ import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track.Format.OG
 import dev.brahmkshatriya.echo.extension.spotify.models.UserProfileView
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -152,7 +155,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
     private var user: User? = null
     override suspend fun getCurrentUser(): User? {
-        return user?.copy(extras = mapOf())
+        return queries.profileAttributes().json.toUser()
     }
 
     private var product: AccountAttributes.Product? = null
@@ -252,7 +255,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }.toFeed()
 
     override suspend fun loadStreamableMedia(
-        streamable: Streamable, isDownload: Boolean
+        streamable: Streamable, isDownload: Boolean,
     ): Streamable.Media {
         return when (streamable.type) {
             Streamable.MediaType.Server -> {
@@ -356,7 +359,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         playlist: Playlist,
         tracks: List<Track>,
         fromIndex: Int,
-        toIndex: Int
+        toIndex: Int,
     ) {
         getPlaylistId(playlist)
         val uid = tracks[fromIndex].extras["uid"]!!
@@ -368,7 +371,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     override suspend fun removeTracksFromPlaylist(
         playlist: Playlist,
         tracks: List<Track>,
-        indexes: List<Int>
+        indexes: List<Int>,
     ) {
         if (api.cookie == null) throw ClientException.LoginRequired()
         when (val type = playlist.id.substringAfter(":").substringBefore(":")) {
@@ -390,7 +393,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         playlist: Playlist,
         tracks: List<Track>,
         index: Int,
-        new: List<Track>
+        new: List<Track>,
     ) {
         if (api.cookie == null) throw ClientException.LoginRequired()
         when (val type = playlist.id.substringAfter(":").substringBefore(":")) {
@@ -432,7 +435,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }
 
     override suspend fun editPlaylistMetadata(
-        playlist: Playlist, title: String, description: String?
+        playlist: Playlist, title: String, description: String?,
     ) {
         val id = getPlaylistId(playlist)
         queries.editPlaylistMetadata(id, title, description).raw
@@ -689,6 +692,10 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         ).toMedia()
     }
 
+    val time = 5000L
+    var lastFetched = 0L
+    val mutex = Mutex()
+
     private suspend fun oggStream(streamable: Streamable): Streamable.Media {
         val fileId = streamable.id
         val gid = streamable.extras["gid"]
@@ -696,7 +703,12 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val storedToken = api.storedToken
             ?: throw IllegalStateException("Spotify stored token is required for streaming")
 
-        val key = MercuryConnection.getAudioKey(storedToken, gid, fileId)
+        val key = mutex.withLock {
+            val lastTime = System.currentTimeMillis() - lastFetched
+            if (lastTime < time) delay(time - lastTime)
+            lastFetched = System.currentTimeMillis()
+            MercuryConnection.getAudioKey(storedToken, gid, fileId)
+        }
         val url = queries.storageResolve(streamable.id).json.cdnUrl.random()
         return Streamable.InputProvider { position, length ->
             decryptFromPosition(key, AUDIO_IV, position, length) { pos, len ->
@@ -716,7 +728,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         iv: BigInteger,
         position: Long,
         length: Long,
-        provider: suspend (Long, Long?) -> Pair<InputStream, Long>
+        provider: suspend (Long, Long?) -> Pair<InputStream, Long>,
     ): Pair<InputStream, Long> {
         val newPos = position + 0xA7
         val alignedPos = newPos - (newPos % 16)

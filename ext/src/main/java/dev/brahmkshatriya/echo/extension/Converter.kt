@@ -561,6 +561,8 @@ fun ItemsItem.toBrowseCategory(queries: Queries): Shelf.Category? {
     return Shelf.Category(
         id = uri,
         title = item.data?.cardRepresentation?.title?.transformedLabel!!,
+//        image = item.data.cardRepresentation.artwork?.toImageHolder(),
+        backgroundColor = item.data.cardRepresentation.backgroundColor?.hex,
         feed = paged {
             val sections = queries.browsePage(uri, it).json.data.browse.sections
             val next = sections.pagingInfo?.nextOffset
