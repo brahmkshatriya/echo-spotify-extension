@@ -53,22 +53,22 @@ fun List<HomeFeed.Chip>.toTabs() = map {
     Tab(it.id!!, it.label?.transformedLabel!!)
 }
 
-fun HomeFeed.Home.toShelves(queries: Queries): List<Shelf> {
+fun HomeFeed.Home.toShelves(queries: Queries, cropCovers: Boolean): List<Shelf> {
     return sectionContainer?.sections?.toShelves(
-        queries,
-        greeting?.transformedLabel ?: "What's on your mind?"
+        queries, cropCovers, greeting?.transformedLabel ?: "What's on your mind?"
     )!!
 }
 
 fun Sections.toShelves(
     queries: Queries,
+    cropCovers: Boolean,
     emptyTitle: String? = null,
     token: String? = null,
 ): List<Shelf> {
     return items?.mapNotNull { item ->
         item.data ?: return@mapNotNull null
         if (item.data.typename == Sections.Typename.BrowseRelatedSectionData)
-            return@mapNotNull item.toCategory(queries)
+            return@mapNotNull item.toCategory(queries, cropCovers)
 
         val uri = item.uri ?: return@mapNotNull null
         val title = item.data.title?.transformedLabel ?: emptyTitle ?: ""
@@ -80,7 +80,7 @@ fun Sections.toShelves(
                     id = uri,
                     title = title,
                     subtitle = subtitle,
-                    list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem() }!!,
+                    list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem(cropCovers) }!!,
                 )
 
             Sections.Typename.HomeGenericSectionData, Sections.Typename.HomeSpotlightSectionData ->
@@ -88,13 +88,13 @@ fun Sections.toShelves(
                     id = uri,
                     title = title,
                     subtitle = subtitle,
-                    list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem() }!!,
+                    list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem(cropCovers) }!!,
                     more = if ((item.sectionItems.totalCount ?: 0) > 3) paged<Shelf> { offset ->
                         val sectionItem = queries.homeSection(uri, token, offset).json
                             .data.homeSections.sections.first().sectionItems
                         val next = sectionItem.pagingInfo?.nextOffset
                         sectionItem.items!!.mapNotNull {
-                            it.content.toMediaItem()?.toShelf()
+                            it.content.toMediaItem(cropCovers)?.toShelf()
                         } to next
                     }.toFeed() else null
                 )
@@ -104,7 +104,9 @@ fun Sections.toShelves(
                     id = uri,
                     title = title,
                     subtitle = subtitle,
-                    list = item.sectionItems?.items?.mapNotNull { it.toBrowseCategory(queries) }!!,
+                    list = item.sectionItems?.items?.mapNotNull {
+                        it.toBrowseCategory(queries, cropCovers)
+                    }!!,
                     type = Shelf.Lists.Type.Grid
                 )
             }
@@ -114,12 +116,12 @@ fun Sections.toShelves(
                 id = uri,
                 title = title,
                 subtitle = subtitle,
-                list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem() }!!,
+                list = item.sectionItems?.items?.mapNotNull { it.content.toMediaItem(cropCovers) }!!,
                 type = Shelf.Lists.Type.Grid
             )
 
             Sections.Typename.HomeFeedBaselineSectionData -> item.sectionItems?.items
-                ?.firstOrNull()?.content?.data?.toMediaItem()?.toShelf()
+                ?.firstOrNull()?.content?.data?.toMediaItem(cropCovers)?.toShelf()
 
             Sections.Typename.BrowseUnsupportedSectionData -> null
             Sections.Typename.HomeOnboardingSectionDataV2 -> null
@@ -129,27 +131,33 @@ fun Sections.toShelves(
     }!!
 }
 
-private fun SectionItem.toCategory(api: Queries): Shelf.Category? {
+private fun SectionItem.toCategory(api: Queries, cropCovers: Boolean): Shelf.Category? {
     val item = sectionItems?.items?.firstOrNull() ?: return null
-    return item.toBrowseCategory(api)
+    return item.toBrowseCategory(api, cropCovers)
 }
 
-fun ITrack.toTrack(a: Album? = null, url: String? = null): Track? {
-    val album = albumOfTrack?.toAlbum(name) ?: a
+fun ITrack.toTrack(
+    cropCovers: Boolean,
+    a: Album? = null,
+    url: String? = null,
+    added: Date? = null,
+): Track? {
+    val album = albumOfTrack?.toAlbum(cropCovers, name) ?: a
     return Track(
         id = uri ?: url ?: return null,
         title = name ?: return null,
         cover = album?.cover,
-        artists = artists.toArtists(),
+        artists = artists.toArtists(null, cropCovers),
         album = album,
         isExplicit = contentRating?.label == Label.EXPLICIT,
         duration = duration?.totalMilliseconds ?: trackDuration?.totalMilliseconds,
         plays = playcount?.toLong(),
         releaseDate = album?.releaseDate,
+        playlistAddedDate = added
     )
 }
 
-fun Item.Playlist.toPlaylist(): Playlist? {
+fun Item.Playlist.toPlaylist(cropCovers: Boolean): Playlist? {
     val desc = description?.removeHtml()?.ifEmpty { null }
     return Playlist(
         id = uri ?: return null,
@@ -157,8 +165,8 @@ fun Item.Playlist.toPlaylist(): Playlist? {
         isEditable = false,
         description = desc,
         subtitle = ownerV2?.data?.name,
-        cover = images?.items?.firstOrNull()?.toImageHolder(),
-        authors = listOfNotNull(ownerV2?.data?.toMediaItem() as? Artist),
+        cover = images?.items?.firstOrNull()?.toImageHolder(cropCovers),
+        authors = listOfNotNull(ownerV2?.data?.toMediaItem(cropCovers) as? Artist),
         trackCount = content?.totalCount,
         duration = content?.toDuration(),
         creationDate = content?.items?.map { it.addedAt?.toDate() }?.maxByOrNull { it ?: Date(0) }
@@ -174,32 +182,32 @@ private fun Item.Playlist.Content.toDuration(): Long? {
     return (average * count).toLong()
 }
 
-fun Item.PseudoPlaylist.toPlaylist(): Playlist? {
+fun Item.PseudoPlaylist.toPlaylist(cropCovers: Boolean): Playlist? {
     return Playlist(
         id = uri ?: return null,
         title = name ?: return null,
         isEditable = true,
-        cover = image?.toImageHolder(),
+        cover = image?.toImageHolder(cropCovers),
         trackCount = count
     )
 }
 
-fun Item.Playlist.toRadio(): Radio? {
+fun Item.Playlist.toRadio(cropCovers: Boolean): Radio? {
     return Radio(
         id = uri ?: return null,
         title = name ?: return null,
         subtitle = description?.removeHtml(),
-        cover = images?.items?.firstOrNull()?.toImageHolder()
+        cover = images?.items?.firstOrNull()?.toImageHolder(cropCovers)
     )
 }
 
-fun IAlbum.toAlbum(n: String? = null): Album? {
+fun IAlbum.toAlbum(cropCovers: Boolean, n: String? = null): Album? {
     return Album(
         id = uri ?: return null,
         title = name ?: n ?: return null,
         subtitle = date?.year?.toString(),
-        artists = artists.toArtists(),
-        cover = coverArt?.toImageHolder(),
+        artists = artists.toArtists(null, cropCovers),
+        cover = coverArt?.toImageHolder(cropCovers),
         trackCount = tracksV2?.totalCount,
         duration = tracksV2?.toDuration(),
         releaseDate = date?.toDate(),
@@ -247,35 +255,35 @@ private fun String.toDate(precision: String? = null): Date {
     return Date(year, month, day)
 }
 
-fun IArtist.toArtist(type: String? = null): Artist? {
+fun IArtist.toArtist(type: String? = null, cropCovers: Boolean): Artist? {
     return Artist(
         id = uri ?: return null,
         name = profile?.name ?: return null,
-        cover = visuals?.avatarImage?.toImageHolder(),
+        cover = visuals?.avatarImage?.toImageHolder(cropCovers),
         subtitle = type,
         bio = profile?.biography?.text?.removeHtml()
     )
 }
 
-fun Artists?.toArtists(subtitle: String? = null) =
-    this?.items?.mapNotNull { it.toArtist(subtitle) } ?: listOf()
+fun Artists?.toArtists(subtitle: String? = null, cropCovers: Boolean) =
+    this?.items?.mapNotNull { it.toArtist(subtitle, cropCovers) } ?: listOf()
 
-fun Item.Podcast.toAlbum(): Album? {
+fun Item.Podcast.toAlbum(cropCovers: Boolean): Album? {
     return Album(
         id = uri ?: return null,
         title = name ?: return null,
         type = Album.Type.Show,
         subtitle = "Podcast",
-        cover = coverArt?.toImageHolder(),
+        cover = coverArt?.toImageHolder(cropCovers),
     )
 }
 
-fun Item.Audiobook.toAlbum(): Album? {
+fun Item.Audiobook.toAlbum(cropCovers: Boolean): Album? {
     return Album(
         id = uri ?: return null,
         title = name ?: return null,
         type = Album.Type.Book,
-        cover = coverArt?.toImageHolder(),
+        cover = coverArt?.toImageHolder(cropCovers),
         description = description?.removeHtml(),
         subtitle = "Audiobook",
         releaseDate = publishDate?.toDate(),
@@ -283,64 +291,69 @@ fun Item.Audiobook.toAlbum(): Album? {
 }
 
 fun Artists.toShelf(
-    id: String, title: String, subtitle: String? = null, more: Feed<Shelf>
+    id: String, title: String, subtitle: String? = null, more: Feed<Shelf>, cropCovers: Boolean,
 ): Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
         id = id,
         title = title,
         subtitle = subtitle,
-        list = items.mapNotNull { it.toArtist(subtitle) },
+        list = items.mapNotNull { it.toArtist(subtitle, cropCovers) },
         more = if (items.size > 3) more else null
     )
 }
 
-fun Albums.toShelf(id: String, title: String, more: Feed<Shelf>): Shelf? {
+fun Albums.toShelf(id: String, title: String, more: Feed<Shelf>, cropCovers: Boolean): Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
         id = id,
         title = title,
-        list = items.mapNotNull { it.releases?.items?.firstOrNull()?.toAlbum() },
+        list = items.mapNotNull { it.releases?.items?.firstOrNull()?.toAlbum(cropCovers) },
         more = if (items.size > 3) more else null
     )
 }
 
-fun Releases.toShelf(id: String, title: String, more: Feed<Shelf>): Shelf? {
+fun Releases.toShelf(id: String, title: String, more: Feed<Shelf>, cropCovers: Boolean): Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
         id = id,
         title = title,
-        list = items.mapNotNull { it.toAlbum() },
+        list = items.mapNotNull { it.toAlbum(cropCovers) },
         more = if (items.size > 3) more else null
     )
 }
 
-private fun ItemsV2.toShelf(id: String, title: String, more: Feed<Shelf>): Shelf? {
+private fun ItemsV2.toShelf(
+    id: String,
+    title: String,
+    more: Feed<Shelf>,
+    cropCovers: Boolean,
+): Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
         id = id,
         title = title,
-        list = items.mapNotNull { it.toMediaItem() },
+        list = items.mapNotNull { it.toMediaItem(cropCovers) },
         more = if (items.size > 3) more else null
     )
 }
 
-fun TracksV2.toTrackShelf(id: String, title: String): Shelf? {
+fun TracksV2.toTrackShelf(id: String, title: String, cropCovers: Boolean): Shelf? {
     if (items.isNullOrEmpty()) return null
     return Shelf.Lists.Tracks(
         id = id,
         title = title,
-        list = items.mapNotNull { it.track?.toTrack() }
+        list = items.mapNotNull { it.track?.toTrack(cropCovers) }
     )
 }
 
 fun pagedItemsV2(
-    block: suspend (offset: Int) -> ItemsV2
+    cropCovers: Boolean, block: suspend (offset: Int) -> ItemsV2,
 ): PagedData<Shelf> {
     var count = 0L
     return paged { offset ->
         val res = block(offset)
-        val items = res.items?.mapNotNull { it.toMediaItem()?.toShelf() } ?: emptyList()
+        val items = res.items?.mapNotNull { it.toMediaItem(cropCovers)?.toShelf() } ?: emptyList()
         val total = res.totalCount ?: 0
         count += items.size
         items to if (count < total) count else null
@@ -348,12 +361,13 @@ fun pagedItemsV2(
 }
 
 fun pagedArtists(
-    block: suspend (offset: Int) -> Artists
+    cropCovers: Boolean, block: suspend (offset: Int) -> Artists,
 ): PagedData<Shelf> {
     var count = 0L
     return paged { offset ->
         val res = block(offset)
-        val items = res.items?.mapNotNull { it.toArtist()?.toShelf() } ?: emptyList()
+        val items =
+            res.items?.mapNotNull { it.toArtist(null, cropCovers)?.toShelf() } ?: emptyList()
         val total = res.totalCount ?: 0
         count += items.size
         items to if (count < total) count else null
@@ -361,13 +375,13 @@ fun pagedArtists(
 }
 
 fun pagedAlbums(
-    block: suspend (offset: Int) -> Albums
+    cropCovers: Boolean, block: suspend (offset: Int) -> Albums,
 ): PagedData<Shelf> {
     var count = 0L
     return paged { offset ->
         val res = block(offset)
         val items = res.items?.map {
-            it.releases?.items?.firstOrNull()?.toAlbum()!!
+            it.releases?.items?.firstOrNull()?.toAlbum(cropCovers)!!
         } ?: emptyList()
         val total = res.totalCount ?: 0
         count += items.size
@@ -375,83 +389,92 @@ fun pagedAlbums(
     }
 }
 
-fun IArtist.toShelves(queries: Queries): List<Shelf> {
+fun IArtist.toShelves(queries: Queries, cropCovers: Boolean): List<Shelf> {
     val uri = uri ?: return emptyList()
     return listOfNotNull(
-        discography?.topTracks?.toTrackShelf("${uri}_top_tracks", "Top Tracks"),
-        discography?.latest?.toAlbum()?.toShelf(),
+        discography?.topTracks?.toTrackShelf("${uri}_top_tracks", "Top Tracks", cropCovers),
+        discography?.latest?.toAlbum(cropCovers)?.toShelf(),
         discography?.popularReleasesAlbums?.toShelf(
             "${uri}_popular",
             "Popular Albums",
-            pagedAlbums {
+            pagedAlbums(cropCovers) {
                 queries.queryArtistDiscographyAll(uri, it)
                     .json.data.artistUnion.discography?.all!!
-            }.toFeed()
+            }.toFeed(),
+            cropCovers
         ),
         relatedContent?.featuringV2?.toShelf(
             "${uri}_featuring",
             "Featuring ${profile?.name}",
-            pagedItemsV2 {
+            pagedItemsV2(cropCovers) {
                 queries.queryArtistFeaturing(uri, it)
                     .json.data.artistUnion.relatedContent?.featuringV2!!
-            }.toFeed()
+            }.toFeed(),
+            cropCovers
         ),
         discography?.albums?.toShelf(
             "${uri}_albums",
             "Albums",
-            pagedAlbums {
+            pagedAlbums(cropCovers) {
                 queries.queryArtistDiscographyAlbums(uri, it)
                     .json.data.artistUnion.discography?.albums!!
-            }.toFeed()
+            }.toFeed(),
+            cropCovers
         ),
         discography?.singles?.toShelf(
             "${uri}_singles",
             "Singles",
-            pagedAlbums {
+            pagedAlbums(cropCovers) {
                 queries.queryArtistDiscographySingles(uri, it)
                     .json.data.artistUnion.discography?.singles!!
-            }.toFeed()
+            }.toFeed(),
+            cropCovers
         ),
         discography?.compilations?.toShelf(
             "${uri}_compilations",
             "Compilations",
-            pagedAlbums {
+            pagedAlbums(cropCovers) {
                 queries.queryArtistDiscographyCompilations(uri, it)
                     .json.data.artistUnion.discography?.compilations!!
-            }.toFeed()
+            }.toFeed(),
+            cropCovers
         ),
         profile?.playlistsV2?.toShelf(
             "${uri}_playlists",
             "Playlists",
-            pagedItemsV2 {
+            pagedItemsV2(cropCovers) {
                 queries.queryArtistPlaylists(uri, it)
                     .json.data.artistUnion.profile?.playlistsV2!!
-            }.toFeed()
+            }.toFeed(),
+            cropCovers
         ),
         relatedContent?.appearsOn?.toShelf(
             "${uri}_appears_on",
             "Appears On",
-            pagedAlbums {
+            pagedAlbums(cropCovers) {
                 queries.queryArtistAppearsOn(uri, it)
                     .json.data.artistUnion.relatedContent?.appearsOn!!
-            }.toFeed()
+            }.toFeed(),
+            cropCovers
         ),
         relatedContent?.discoveredOnV2?.toShelf(
             "${uri}_discovered_on",
             "Discovered On",
-            pagedItemsV2 {
+            pagedItemsV2(cropCovers) {
                 queries.queryArtistDiscoveredOn(uri, it)
                     .json.data.artistUnion.relatedContent?.discoveredOnV2!!
-            }.toFeed()
+            }.toFeed(),
+            cropCovers
         ),
         relatedContent?.relatedArtists?.toShelf(
             "${uri}_related_artists",
             "Artist",
             "Artist",
-            pagedArtists {
+            pagedArtists(cropCovers) {
                 queries.queryArtistRelated(uri, it)
                     .json.data.artistUnion.relatedContent?.relatedArtists!!
-            }.toFeed()
+            }.toFeed(),
+            cropCovers
         )
     )
 }
@@ -463,62 +486,62 @@ val likedPlaylist = Playlist(
     cover = "https://misc.scdn.co/liked-songs/liked-songs-300.png".toImageHolder()
 )
 
-fun Wrapper.toMediaItem() = when (uri) {
+fun Wrapper.toMediaItem(cropCovers: Boolean) = when (uri) {
     "spotify:user:@:collection" -> likedPlaylist
-    else -> data?.toMediaItem()
+    else -> data?.toMediaItem(cropCovers)
 }
 
-fun Item.toMediaItem(): EchoMediaItem? {
+fun Item.toMediaItem(cropCovers: Boolean): EchoMediaItem? {
     return when (this) {
-        is Item.Album -> toAlbum()
+        is Item.Album -> toAlbum(cropCovers)
 
         is Item.PreRelease -> Album(
             id = preReleaseContent?.uri ?: return null,
             title = preReleaseContent.name ?: return null,
             type = Album.Type.PreRelease,
-            artists = preReleaseContent.artists.toArtists(),
-            cover = preReleaseContent.coverArt?.toImageHolder()
+            artists = preReleaseContent.artists.toArtists(null, cropCovers),
+            cover = preReleaseContent.coverArt?.toImageHolder(cropCovers)
         )
 
-        is Item.PseudoPlaylist -> toPlaylist()
+        is Item.PseudoPlaylist -> toPlaylist(cropCovers)
 
-        is Item.Playlist -> toPlaylist()
+        is Item.Playlist -> toPlaylist(cropCovers)
 
-        is Item.Artist -> toArtist("Artist")
+        is Item.Artist -> toArtist("Artist", cropCovers)
 
-        is Item.Track -> toTrack()
+        is Item.Track -> toTrack(cropCovers)
 
         is Item.Episode -> Track(
             id = uri ?: return null,
             title = name ?: return null,
             type = Track.Type.Podcast,
-            cover = coverArt?.toImageHolder(),
+            cover = coverArt?.toImageHolder(cropCovers),
             description = description?.removeHtml(),
-            album = podcastV2?.data?.toAlbum(),
+            album = podcastV2?.data?.toAlbum(cropCovers),
             isExplicit = contentRating?.label == Label.EXPLICIT,
             duration = duration?.totalMilliseconds,
             releaseDate = releaseDate?.toDate(),
         )
 
-        is Item.Podcast -> toAlbum()
+        is Item.Podcast -> toAlbum(cropCovers)
 
         is Item.Chapter -> Track(
             id = uri ?: return null,
             title = name ?: return null,
-            cover = coverArt?.toImageHolder(),
+            cover = coverArt?.toImageHolder(cropCovers),
             description = description?.removeHtml(),
-            album = audiobookV2?.data?.toAlbum(),
+            album = audiobookV2?.data?.toAlbum(cropCovers),
             isExplicit = contentRating?.label == Label.EXPLICIT,
             duration = duration?.totalMilliseconds,
         )
 
-        is Item.Audiobook -> toAlbum()
+        is Item.Audiobook -> toAlbum(cropCovers)
 
         is Item.User -> Artist(
             id = uri ?: return null,
             name = displayName ?: name ?: username ?: return null,
             subtitle = "User",
-            cover = avatar?.toImageHolder()
+            cover = avatar?.toImageHolder(cropCovers)
         )
 
         is Item.BrowseClientFeature -> null
@@ -539,22 +562,22 @@ private fun String?.removeHtml(): String? {
     return this?.replace(htmlRegex, "")
 }
 
-private fun Artwork.toImageHolder(): ImageHolder? {
-    return this.sources.sortedBy { it.height }.middleOrNull()?.url?.toImageHolder()
+private fun Artwork.toImageHolder(cropCovers: Boolean): ImageHolder? {
+    return this.sources.sortedBy { it.height }.middleOrNull()?.url?.toImageHolder(crop = cropCovers)
 }
 
 private fun <T> List<T>.middleOrNull() = getOrNull(size.ceilDiv(2)) ?: lastOrNull()
 private fun Int.ceilDiv(other: Int) = ceil(this.toDouble() / other).toInt()
 
 fun <T : Any> paged(
-    load: suspend (offset: Int) -> Pair<List<T>, Long?>
+    load: suspend (offset: Int) -> Pair<List<T>, Long?>,
 ) = PagedData.Continuous { cont ->
     val offset = cont?.toInt() ?: 0
     val (data, next) = load(offset)
     Page(data, next?.toString())
 }
 
-fun ItemsItem.toBrowseCategory(queries: Queries): Shelf.Category? {
+fun ItemsItem.toBrowseCategory(queries: Queries, cropCovers: Boolean): Shelf.Category? {
     val uri = uri
     val item = content.data
     if (item !is Item.BrowseSectionContainer) return null
@@ -566,7 +589,7 @@ fun ItemsItem.toBrowseCategory(queries: Queries): Shelf.Category? {
         feed = paged {
             val sections = queries.browsePage(uri, it).json.data.browse.sections
             val next = sections.pagingInfo?.nextOffset
-            sections.toShelves(queries) to next
+            sections.toShelves(queries, cropCovers) to next
         }.toFeed()
     )
 }
@@ -578,31 +601,35 @@ fun ProfileAttributes.toUser() = User(
 )
 
 private val filteredCategory = listOf("PODCASTS", "AUDIOBOOKS")
-fun SearchDesktop.SearchV2.toShelvesAndTabs(query: String, queries: Queries): Pair<PagedData<Shelf>, List<Tab>> {
+fun SearchDesktop.SearchV2.toShelvesAndTabs(
+    query: String,
+    queries: Queries,
+    cropCovers: Boolean,
+): Pair<PagedData<Shelf>, List<Tab>> {
     val tabs = listOf(Tab("ALL", "All")) + chipOrder?.items?.map { chip ->
         Tab(chip.typeName!!, chip.typeName.lowercase().replaceFirstChar { it.uppercaseChar() })
     }!!
 
     val shelves = listOfNotNull(
-        topResultsV2?.itemsV2?.firstOrNull()?.item?.toMediaItem()?.toShelf(),
-        tracksV2?.items?.toTrackShelf("${query}_songs","Songs"),
-        topResultsV2?.featured?.toMediaShelf("${query}_featured","Featured"),
-        artists?.toMediaShelf("${query}_artists","Artists"),
-        albumsV2?.toMediaShelf("${query}_albums","Albums"),
-        playlists?.toMediaShelf("${query}_playlists","Playlists"),
-        podcasts?.toMediaShelf("${query}_podcasts","Podcasts"),
-        episodes?.toMediaShelf("${query}_episodes","Episodes"),
-        users?.toMediaShelf("${query}_users","Users"),
-        genres?.toCategoryShelf("${query}_genres","Genres", queries)
+        topResultsV2?.itemsV2?.firstOrNull()?.item?.toMediaItem(cropCovers)?.toShelf(),
+        tracksV2?.items?.toTrackShelf("${query}_songs", "Songs", cropCovers),
+        topResultsV2?.featured?.toMediaShelf("${query}_featured", "Featured", cropCovers),
+        artists?.toMediaShelf("${query}_artists", "Artists", cropCovers),
+        albumsV2?.toMediaShelf("${query}_albums", "Albums", cropCovers),
+        playlists?.toMediaShelf("${query}_playlists", "Playlists", cropCovers),
+        podcasts?.toMediaShelf("${query}_podcasts", "Podcasts", cropCovers),
+        episodes?.toMediaShelf("${query}_episodes", "Episodes", cropCovers),
+        users?.toMediaShelf("${query}_users", "Users", cropCovers),
+        genres?.toCategoryShelf("${query}_genres", "Genres", queries, cropCovers)
     )
     return PagedData.Single { shelves } to tabs.filter { it.id !in filteredCategory }
 }
 
 private fun SearchDesktop.SearchItems.toCategoryShelf(
-    id: String, title: String, queries: Queries
+    id: String, title: String, queries: Queries, cropCovers: Boolean,
 ): Shelf? {
     if (items.isNullOrEmpty()) return null
-    val items = items.mapNotNull { it.toGenreCategory(queries) }
+    val items = items.mapNotNull { it.toGenreCategory(queries, cropCovers) }
     return Shelf.Lists.Categories(
         id = id,
         title = title,
@@ -611,34 +638,41 @@ private fun SearchDesktop.SearchItems.toCategoryShelf(
     )
 }
 
-fun SearchDesktop.SearchItems?.toItemShelves(): Pair<List<Shelf>, Long?> {
+fun SearchDesktop.SearchItems?.toItemShelves(cropCovers: Boolean): Pair<List<Shelf>, Long?> {
     if (this == null || items == null) return emptyList<Shelf>() to null
     val items = items
     val next = pagingInfo?.nextOffset
     return items.mapNotNull { item ->
-        item.data?.toMediaItem()?.toShelf()
+        item.data?.toMediaItem(cropCovers)?.toShelf()
     } to next
 }
 
-fun SearchDesktop.TracksV2?.toItemShelves(): Pair<List<Shelf>, Long?> {
+fun SearchDesktop.TracksV2?.toItemShelves(
+    cropCovers: Boolean,
+): Pair<List<Shelf>, Long?> {
     if (this == null || items == null) return emptyList<Shelf>() to null
     val items = items
     val next = pagingInfo?.nextOffset
     return items.mapNotNull { item ->
-        item.item?.data?.toTrack()?.toShelf()
+        item.item?.data?.toTrack(cropCovers)?.toShelf()
     } to next
 }
 
-fun SearchDesktop.SearchItems?.toCategoryShelves(queries: Queries): Pair<List<Shelf>, Long?> {
+fun SearchDesktop.SearchItems?.toCategoryShelves(
+    queries: Queries,
+    cropCovers: Boolean,
+): Pair<List<Shelf>, Long?> {
     if (this == null || items == null) return emptyList<Shelf>() to null
     val items = items
     val next = pagingInfo?.nextOffset
     return items.mapNotNull { item ->
-        item.toGenreCategory(queries)
+        item.toGenreCategory(queries, cropCovers)
     } to next
 }
 
-private fun Wrapper.toGenreCategory(queries: Queries): Shelf.Category? {
+private fun Wrapper.toGenreCategory(
+    queries: Queries, cropCovers: Boolean,
+): Shelf.Category? {
     val item = data
     if (item !is Item.Genre) return null
     val uri = item.uri!!
@@ -648,32 +682,33 @@ private fun Wrapper.toGenreCategory(queries: Queries): Shelf.Category? {
         feed = paged {
             val sections = queries.browsePage(uri, it).json.data.browse.sections
             val next = sections.pagingInfo?.nextOffset
-            sections.toShelves(queries) to next
+            sections.toShelves(queries, cropCovers) to next
         }.toFeed()
     )
 }
 
-private fun SearchDesktop.SearchItems.toMediaShelf(id: String, title: String) =
-    items?.toMediaShelf(id, title)
+private fun SearchDesktop.SearchItems.toMediaShelf(id: String, title: String, cropCovers: Boolean) =
+    items?.toMediaShelf(id, title, cropCovers)
 
-private fun List<Wrapper>?.toMediaShelf(id: String, title: String): Shelf? {
+private fun List<Wrapper>?.toMediaShelf(id: String, title: String, cropCovers: Boolean): Shelf? {
     if (this.isNullOrEmpty()) return null
     return Shelf.Lists.Items(
         id = id,
         title = title,
-        list = mapNotNull { it.toMediaItem() }
+        list = mapNotNull { it.toMediaItem(cropCovers) }
     )
 }
 
 private fun List<SearchDesktop.TrackWrapperWrapper>?.toTrackShelf(
     id: String,
-    title: String
+    title: String,
+    cropCovers: Boolean,
 ): Shelf? {
     if (this.isNullOrEmpty()) return null
     return Shelf.Lists.Tracks(
         id = id,
         title = title,
-        list = mapNotNull { it.item?.data?.toTrack() }
+        list = mapNotNull { it.item?.data?.toTrack(cropCovers) }
     )
 }
 
@@ -692,7 +727,7 @@ private fun Metadata4Track.Date.toReleaseDate() =
     if (year != null) Date(year, month, day) else null
 
 fun Metadata4Track.Format.show(
-    hasPremium: Boolean, supportsPlayPlay: Boolean, showWidevineStreams: Boolean
+    hasPremium: Boolean, supportsPlayPlay: Boolean, showWidevineStreams: Boolean,
 ) = when (this) {
     Metadata4Track.Format.OGG_VORBIS_320 -> hasPremium && supportsPlayPlay
     Metadata4Track.Format.OGG_VORBIS_160 -> supportsPlayPlay
@@ -709,7 +744,7 @@ fun Metadata4Track.toTrack(
     hasPremium: Boolean,
     supportsPlayPlay: Boolean,
     showWidevineStreams: Boolean,
-    canvas: Streamable?
+    canvas: Streamable?,
 ): Track {
     val id = "spotify:track:${Base62.encode(gid!!)}"
     val title = name!!
@@ -783,12 +818,6 @@ fun UserProfileView.toArtist(): Artist? {
     )
 }
 
-private fun String.toImage() = when (val type = substringAfter(':').substringBefore(':')) {
-    "image" -> "https://i.scdn.co/image/${substringAfter("image:")}"
-    "mosaic" -> "https://mosaic.scdn.co/300/${substringAfter("mosaic:").replace(":", "")}"
-    else -> throw IllegalArgumentException("Invalid image type: $type")
-}
-
 fun UserProfileView.toShelf(): Shelf? {
     if (publicPlaylists.isNullOrEmpty()) return null
     val playlists = publicPlaylists.mapNotNull {
@@ -799,7 +828,7 @@ fun UserProfileView.toShelf(): Shelf? {
             id = it.uri ?: return@mapNotNull null,
             title = it.name ?: return@mapNotNull null,
             false,
-            cover = it.imageUrl?.toImage()?.toImageHolder(),
+            cover = it.imageUrl?.toImageHolder(),
             authors = listOfNotNull(owner)
         )
     }
@@ -819,31 +848,32 @@ fun UserFollowers.toShelf(id: String, title: String): Shelf? {
 }
 
 fun pagedLibrary(
-    queries: Queries, filter: String? = null, folderUri: String? = null
+    queries: Queries, filter: String? = null, folderUri: String? = null, cropCovers: Boolean,
 ) = paged { offset ->
     val res = queries.libraryV3(offset, filter, folderUri)
     val library = res.json.data?.me?.libraryV3!!
-    val shelves = library.items.mapNotNull { it.toShelf(queries) }
+    val shelves = library.items.mapNotNull { it.toShelf(queries, cropCovers) }
     val page = library.pagingInfo!!
     val next = page.offset!! + page.limit!!
     shelves to if (library.totalCount!! > next) next else null
 }
 
-fun LibraryV3.Item.toShelf(queries: Queries): Shelf? {
+fun LibraryV3.Item.toShelf(queries: Queries, cropCovers: Boolean): Shelf? {
     return if (item?.typename == "LibraryFolderResponseWrapper") {
         val folder = item.data as Item.Folder
         val folderUri = folder.uri ?: return null
         Shelf.Category(
             folderUri, folder.name!!,
-            pagedLibrary(queries, null, folderUri).toFeed()
+            pagedLibrary(queries, null, folderUri, cropCovers).toFeed()
         )
-    } else item?.data?.toMediaItem()?.toShelf()
+    } else item?.data?.toMediaItem(cropCovers)?.toShelf()
 }
 
 fun editablePlaylists(
     queries: Queries,
     track: String?,
-    folderUri: String? = null
+    folderUri: String? = null,
+    cropCovers: Boolean,
 ): PagedData<Pair<Playlist, Boolean>> =
     paged { offset ->
         val res = queries.editablePlaylists(
@@ -853,19 +883,19 @@ fun editablePlaylists(
             when (val item = it.item.data) {
                 is Item.PseudoPlaylist -> {
                     val curated = it.curates ?: return@mapNotNull null
-                    val playlist = item.toPlaylist() ?: return@mapNotNull null
+                    val playlist = item.toPlaylist(cropCovers) ?: return@mapNotNull null
                     listOfNotNull(playlist to curated)
                 }
 
                 is Item.Playlist -> {
                     val curated = it.curates ?: return@mapNotNull null
-                    val playlist = item.toPlaylist() ?: return@mapNotNull null
+                    val playlist = item.toPlaylist(cropCovers) ?: return@mapNotNull null
                     listOfNotNull(playlist to curated)
                 }
 
                 is Item.Folder -> {
                     val uri = item.uri ?: return@mapNotNull null
-                    editablePlaylists(queries, track, uri).loadAll()
+                    editablePlaylists(queries, track, uri, cropCovers).loadAll()
                 }
 
                 else -> null

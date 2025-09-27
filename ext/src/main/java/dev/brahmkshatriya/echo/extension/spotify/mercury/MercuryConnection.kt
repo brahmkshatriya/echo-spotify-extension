@@ -274,14 +274,14 @@ class MercuryConnection private constructor() {
                     val failed = APResponseMessage.parseFrom(payload).loginFailed
                     throw Exception(failed.toString())
                 } else check(read <= 0) { "Read unknown data!" }
-            } catch (ignored: SocketTimeoutException) {
+            } catch (_: SocketTimeoutException) {
             } finally {
                 socket.soTimeout = 0
             }
 
             cipherPair = CipherPair(
-                Arrays.copyOfRange(data.toByteArray(), 0x14, 0x34),
-                Arrays.copyOfRange(data.toByteArray(), 0x34, 0x54)
+                data.toByteArray().copyOfRange(0x14, 0x34),
+                data.toByteArray().copyOfRange(0x34, 0x54)
             )
         }
     }

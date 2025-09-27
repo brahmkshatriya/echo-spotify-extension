@@ -11,9 +11,9 @@ import dev.brahmkshatriya.echo.common.clients.LoginClient
 import dev.brahmkshatriya.echo.common.clients.LyricsClient
 import dev.brahmkshatriya.echo.common.clients.PlaylistClient
 import dev.brahmkshatriya.echo.common.clients.PlaylistEditClient
-import dev.brahmkshatriya.echo.common.clients.QuickSearchClient
 import dev.brahmkshatriya.echo.common.clients.RadioClient
 import dev.brahmkshatriya.echo.common.clients.SaveClient
+import dev.brahmkshatriya.echo.common.clients.SearchFeedClient
 import dev.brahmkshatriya.echo.common.clients.ShareClient
 import dev.brahmkshatriya.echo.common.clients.TrackClient
 import dev.brahmkshatriya.echo.common.helpers.ClientException
@@ -32,7 +32,6 @@ import dev.brahmkshatriya.echo.common.models.Lyrics
 import dev.brahmkshatriya.echo.common.models.NetworkRequest
 import dev.brahmkshatriya.echo.common.models.NetworkRequest.Companion.toGetRequest
 import dev.brahmkshatriya.echo.common.models.Playlist
-import dev.brahmkshatriya.echo.common.models.QuickSearchItem
 import dev.brahmkshatriya.echo.common.models.Radio
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Streamable
@@ -81,7 +80,7 @@ import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
-    QuickSearchClient, HomeFeedClient, LibraryFeedClient, LyricsClient, ShareClient,
+    SearchFeedClient, HomeFeedClient, LibraryFeedClient, LyricsClient, ShareClient,
     TrackClient, LikeClient, RadioClient, SaveClient,
     AlbumClient, PlaylistClient, ArtistClient, FollowClient, PlaylistEditClient {
 
@@ -91,10 +90,17 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             "show_canvas",
             "Whether to show background video canvas in songs",
             showCanvas
+        ),
+        SettingSwitch(
+            "Crop Covers",
+            "crop_covers",
+            "Whether to crop artist and users images to fill the whole circle",
+            cropCovers
         )
     )
 
     private val showCanvas get() = setting.getBoolean("show_canvas") ?: true
+    private val cropCovers get() = setting.getBoolean("crop_covers") ?: true
 
     lateinit var setting: Settings
     override fun setSettings(settings: Settings) {
@@ -165,74 +171,48 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         return product != AccountAttributes.Product.FREE
     }
 
-    override suspend fun deleteQuickSearch(item: QuickSearchItem) {
-        val history = getHistory().toMutableList()
-        history.remove(item.title)
-        setting.putString("search_history", history.joinToString(","))
-    }
-
-    private fun getHistory() = setting.getString("search_history")
-        ?.split(",")?.distinct()?.take(5)
-        ?: emptyList()
-
-    private fun saveInHistory(query: String) {
-        val history = getHistory().toMutableList()
-        history.add(0, query)
-        setting.putString("search_history", history.joinToString(","))
-    }
-
-    override suspend fun quickSearch(query: String): List<QuickSearchItem> {
-        if (query.isBlank()) return getHistory().map { QuickSearchItem.Query(it, true) }
-        val results = queries.searchDesktop(query, 10).json.data.searchV2.topResultsV2?.itemsV2
-        return results?.mapNotNull {
-            val item = it.item?.toMediaItem() ?: return@mapNotNull null
-            QuickSearchItem.Media(item, false)
-        }.orEmpty()
-    }
-
     private fun getBrowsePage(): Feed.Data<Shelf> = PagedData.Single {
-        queries.browseAll().json.data.browseStart.sections.toShelves(queries)
+        queries.browseAll().json.data.browseStart.sections.toShelves(queries, cropCovers)
     }.toFeedData()
 
     override suspend fun loadSearchFeed(query: String): Feed<Shelf> {
         if (query.isBlank()) return Feed(listOf()) { getBrowsePage() }
-        saveInHistory(query)
         val (shelves, tabs) = queries.searchDesktop(query).json.data.searchV2
-            .toShelvesAndTabs(query, queries)
+            .toShelvesAndTabs(query, queries, cropCovers)
         return Feed(tabs) { tab ->
             when (tab?.id) {
                 "ARTISTS" -> paged {
                     queries.searchArtist(query, it).json.data.searchV2.artists
-                        .toItemShelves()
+                        .toItemShelves(cropCovers)
                 }
 
                 "TRACKS" -> paged {
                     queries.searchTrack(query, it).json.data.searchV2.tracksV2
-                        .toItemShelves()
+                        .toItemShelves(cropCovers)
                 }
 
                 "ALBUMS" -> paged {
                     queries.searchAlbum(query, it).json.data.searchV2.albumsV2
-                        .toItemShelves()
+                        .toItemShelves(cropCovers)
                 }
 
                 "PLAYLISTS" -> paged {
                     queries.searchPlaylist(query, it).json.data.searchV2.playlists
-                        .toItemShelves()
+                        .toItemShelves(cropCovers)
                 }
 
                 "GENRES" -> paged {
                     queries.searchGenres(query, it).json.data.searchV2.genres
-                        .toCategoryShelves(queries)
+                        .toCategoryShelves(queries, cropCovers)
                 }
 
                 "EPISODES" -> paged {
                     queries.searchFullEpisodes(query, it).json.data.searchV2.episodes
-                        .toItemShelves()
+                        .toItemShelves(cropCovers)
                 }
 
                 "USERS" -> paged {
-                    queries.searchUser(query, it).json.data.searchV2.users.toItemShelves()
+                    queries.searchUser(query, it).json.data.searchV2.users.toItemShelves(cropCovers)
                 }
 
                 else -> shelves
@@ -246,11 +226,14 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             val b = queries.internalLinkRecommenderTrack(track.id).json.data.seoRecommendedTrack
             a.await() to b
         }
-        val list = rec.items.mapNotNull { it.data?.toTrack() }.takeIf { it.isNotEmpty() }?.let {
-            listOf(Shelf.Lists.Tracks("${track.id}_more", "More like this", it))
-        } ?: emptyList<Shelf>()
-        val first = union.firstArtist?.items?.firstOrNull()?.toShelves(queries) ?: emptyList()
-        val other = union.otherArtists?.items.orEmpty().map { it.toShelves(queries) }.flatten()
+        val list =
+            rec.items.mapNotNull { it.data?.toTrack(cropCovers) }.takeIf { it.isNotEmpty() }?.let {
+                listOf(Shelf.Lists.Tracks("${track.id}_more", "More like this", it))
+            } ?: emptyList<Shelf>()
+        val first =
+            union.firstArtist?.items?.firstOrNull()?.toShelves(queries, cropCovers) ?: emptyList()
+        val other =
+            union.otherArtists?.items.orEmpty().map { it.toShelves(queries, cropCovers) }.flatten()
         list + first + other
     }.toFeed()
 
@@ -283,7 +266,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             if (showCanvas) async { queries.canvas(track.id).json.toStreamable() } else null
         queries.metadata4Track(track.id).json.toTrack(
             hasPremium,
-            !showWidevineStreams,
+            hasPremium,
             showWidevineStreams,
             canvas?.await()
         ).copy(
@@ -293,7 +276,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
     private suspend fun createRadio(id: String): Radio {
         val radioId = queries.seedToPlaylist(id).json.mediaItems.first().uri
-        return queries.fetchPlaylist(radioId).json.data.playlistV2.toRadio()!!
+        return queries.fetchPlaylist(radioId).json.data.playlistV2.toRadio(cropCovers)!!
     }
 
     override suspend fun radio(item: EchoMediaItem, context: EchoMediaItem?) = createRadio(item.id)
@@ -303,7 +286,8 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     override suspend fun loadPlaylist(playlist: Playlist) =
         when (val type = playlist.id.substringAfter(":").substringBefore(":")) {
             "playlist" -> {
-                val new = queries.fetchPlaylist(playlist.id).json.data.playlistV2.toPlaylist()!!
+                val new =
+                    queries.fetchPlaylist(playlist.id).json.data.playlistV2.toPlaylist(cropCovers)!!
                 new.copy(
                     isEditable = runCatching {
                         val id = getPlaylistId(new)
@@ -330,7 +314,8 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     private fun loadPlaylistTracks(id: String, skipFirst: Boolean = false) = paged { offset ->
         val content = queries.fetchPlaylistContent(id, offset).json.data.playlistV2.content!!
         val tracks = content.items!!.mapNotNull {
-            val track = it.itemV2?.data?.toTrack() ?: return@mapNotNull null
+            val track = it.itemV2?.data?.toTrack(cropCovers, added = it.addedAt?.toDate())
+                ?: return@mapNotNull null
             if (it.uid != null) track.copy(extras = mapOf("uid" to it.uid)) else track
         }.let {
             if (skipFirst && offset == 0) it.drop(1) else it
@@ -342,7 +327,13 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
     private fun loadLikedTracks() = paged { offset ->
         val content = queries.fetchLibraryTracks(offset).json.data.me.library.tracks
-        val tracks = content.items.map { it.track.data?.toTrack(url = it.track.uri)!! }
+        val tracks = content.items.map {
+            it.track.data?.toTrack(
+                cropCovers,
+                url = it.track.uri,
+                added = it.addedAt?.toDate()
+            )!!
+        }
         val page = content.pagingInfo!!
         val next = page.offset!! + page.limit!!
         tracks to if (content.totalCount!! > next) next else null
@@ -442,7 +433,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }
 
     override suspend fun listEditablePlaylists(track: Track?): List<Pair<Playlist, Boolean>> {
-        return editablePlaylists(queries, track?.id).loadAll()
+        return editablePlaylists(queries, track?.id, null, cropCovers).loadAll()
     }
 
     override suspend fun loadFeed(playlist: Playlist): Feed<Shelf>? =
@@ -451,7 +442,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
                 PagedData.Single<Shelf> {
 
                     val playlists = queries.seoRecommendedPlaylist(playlist.id).json.data
-                        .seoRecommendedPlaylist.items.mapNotNull { it.toMediaItem() }
+                        .seoRecommendedPlaylist.items.mapNotNull { it.toMediaItem(cropCovers) }
                     if (playlists.isEmpty()) return@Single emptyList()
                     listOf(
                         Shelf.Lists.Items(
@@ -469,7 +460,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
     override suspend fun loadAlbum(album: Album): Album {
         val res = queries.getAlbum(album.id)
-        return res.json.data.albumUnion.toAlbum()!!.copy(
+        return res.json.data.albumUnion.toAlbum(cropCovers)!!.copy(
             extras = mapOf("raw" to res.raw)
         )
     }
@@ -480,7 +471,9 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         Album.Type.Book -> null
         else -> PagedData.Single {
             val union = api.json.decode<GetAlbum>(album.extras["raw"]!!).data.albumUnion
-            union.moreAlbumsByArtist?.items.orEmpty().map { it.toShelves(queries) }.flatten()
+            union.moreAlbumsByArtist?.items.orEmpty().map {
+                it.toShelves(queries, cropCovers)
+            }.flatten()
         }.toFeed()
     }
 
@@ -493,7 +486,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
                 val content =
                     queries.queryAlbumTracks(album.id, offset).json.data.albumUnion.tracksV2!!
                 val tracks = content.items!!.map {
-                    it.track?.toTrack(album)!!
+                    it.track?.toTrack(cropCovers, album)!!
                 }
                 next += tracks.size
                 tracks to if (content.totalCount!! > next) next else null
@@ -509,7 +502,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             PagedData.Single {
                 val res = if (tab == null || tab.id == "") home
                 else queries.home(tab.id).json.data?.home!!
-                res.toShelves(queries)
+                res.toShelves(queries, cropCovers)
             }.toFeedData()
         }
     }
@@ -527,7 +520,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val tabs = (listOf("All", "You") + filters).map { Tab(it, it) }
         return Feed(tabs) { tab ->
             when (tab?.id) {
-                "All", null -> pagedLibrary(queries)
+                "All", null -> pagedLibrary(queries, cropCovers = cropCovers)
                 "You" -> PagedData.Single {
                     val top = queries.userTopContent().json.data.me.profile
 
@@ -538,22 +531,22 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
                             "top_artists",
                             "Top Artist",
                             top.topArtists?.items.orEmpty().mapNotNull {
-                                it.toMediaItem()
+                                it.toMediaItem(cropCovers)
                             }
                         ),
                         Shelf.Lists.Tracks(
                             "top_tracks",
                             "Top Tracks",
                             top.topTracks?.items.orEmpty().mapNotNull {
-                                (it.data as Item.Track).toTrack()
+                                (it.data as Item.Track).toTrack(cropCovers)
                             }
                         )
                     ) + queries.fetchEntitiesForRecentlyPlayed(uris).json.data.lookup.mapNotNull {
-                        it.data?.toMediaItem()?.toShelf()
+                        it.data?.toMediaItem(cropCovers)?.toShelf()
                     }
                 }
 
-                else -> pagedLibrary(queries, tab.id)
+                else -> pagedLibrary(queries, tab.id, null, cropCovers)
             }.toFeedData()
         }
     }
@@ -611,7 +604,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         return when (val type = artist.id.substringAfter(":").substringBefore(":")) {
             "artist" -> {
                 val res = api.json.decode<ArtistOverview>(artist.extras["raw"]!!)
-                res.data.artistUnion.toShelves(queries)
+                res.data.artistUnion.toShelves(queries, cropCovers)
             }
 
             "user" -> {
@@ -632,7 +625,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         when (val type = artist.id.substringAfter(":").substringBefore(":")) {
             "artist" -> {
                 val res = queries.queryArtistOverview(artist.id)
-                return res.json.data.artistUnion.toArtist()!!.copy(
+                return res.json.data.artistUnion.toArtist(null, cropCovers)!!.copy(
                     extras = mapOf("raw" to res.raw)
                 )
             }

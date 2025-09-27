@@ -14,6 +14,8 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.echo.common)
+    testImplementation("xyz.gianlu.librespot:librespot-lib:1.6.5")
+    testImplementation("org.slf4j:slf4j-simple:2.0.17")
 }
 
 java {

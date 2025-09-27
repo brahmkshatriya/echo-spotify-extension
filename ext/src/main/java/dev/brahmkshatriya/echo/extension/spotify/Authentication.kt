@@ -24,11 +24,9 @@ class Authentication(
     var accessToken: String? = null
     private var tokenExpiration: Long = 0
     var clientToken: String? = null
-//    private var spT: String? = null
 
     private suspend fun createAccessToken(): String {
-        val (url, _, _) = getUrlAndClient()
-        val req = Request.Builder().url(url)
+        val req = Request.Builder().url(getUrl())
         val res = httpClient.newCall(req.build()).await()
         val body = res.body.string()
         val token = runCatching { json.decode<TokenResponse>(body) }.getOrElse {
@@ -36,22 +34,6 @@ class Authentication(
                 Exception(body.ifEmpty { "Token Code ${res.code}" })
             }
         }
-//        val deviceId = token.clientId
-//        val postData =
-//            """{"client_data":{"client_version":"$clientVersion","client_id":"$clientId","js_sdk_data":{"device_brand":"unknown","device_model":"unknown","os":"windows","os_version":"NT 10.0","device_id":"$deviceId","device_type":"computer"}}}"""
-//                .toByteArray()
-//        val clientTokenUrl = Request.Builder()
-//            .url("https://clienttoken.spotify.com/v1/clienttoken")
-//            .header("accept", "application/json")
-//            .post(
-//                postData.toRequestBody("application/json".toMediaType(), 0, postData.size)
-//            ).build()
-
-//        val clientTokenResponse = httpClient.newCall(clientTokenUrl).await()
-//        val clientTokenBody = clientTokenResponse.body.string()
-//        clientToken = runCatching { json.decode<ClientTokenResponse>(clientTokenBody) }.getOrElse {
-//            throw Exception(clientTokenBody.ifEmpty { "Client Token Code ${res.code}" })
-//        }.grantedToken.token
 
         accessToken = token.accessToken
         tokenExpiration = token.accessTokenExpirationTimestampMs - 5 * 60 * 1000
@@ -59,57 +41,25 @@ class Authentication(
     }
 
     @OptIn(ExperimentalStdlibApi::class)
-    private suspend fun getUrlAndClient(): Triple<String, String, String> {
-        val (secret, version, clientId, clientVersion) = getDataFromSite()
+    private suspend fun getUrl(): String {
+        val (secret, version) = getDataFromSite()
         val time = System.currentTimeMillis()
         val totp = TOTP.generateTOTP(secret, (time / 30000).toHexString().uppercase())
         val url =
             "https://open.spotify.com/api/token?reason=init&productType=web-player&totp=${totp}&totpServer=${totp}&totpVer=$version"
-        return Triple(url, clientVersion, clientId)
+        return url
     }
 
     private val secretsUrl =
         "https://raw.githubusercontent.com/itsmechinmoy/echo-extensions/refs/heads/main/noidea.txt"
-//    private val playerJsRegex =
-//        Regex("https://open\\.spotifycdn\\.com/cdn/build/mobile-web-player/mobile-web-player\\..{8}\\.js")
-//    private val clientVersionRegex = Regex("clientID:\"(.{32})\",clientVersion:\"(.{10,24})\"")
-
-    data class Data(
-        val seed: String,
-        val version: Int,
-        val clientId: String,
-        val clientVersion: String,
-    )
 
     @OptIn(ExperimentalEncodingApi::class)
-    private suspend fun getDataFromSite(): Data {
-//        val res = httpClient.newCall(Request.Builder().url("https://open.spotify.com/").build())
-//            .await()
-//        val body = res.body.string()
-//        val playerJs = playerJsRegex.find(body)?.value
-//            ?: throw IllegalStateException("Failed to get player js")
-//        spT = res.headers("Set-Cookie")
-//            .firstOrNull { it.startsWith("sp_t=") }
-//            ?.substringAfter("sp_t=")
-//            ?.substringBefore(";")
-
-//        val file = File(api.cacheDir.absolutePath, "${playerJs.hashCode()}")
-//        val jsBody = if (file.exists()) file.readText() else {
-//            file.parentFile.deleteRecursively()
-//            file.parentFile.mkdirs()
-//            val js =
-//                httpClient.newCall(Request.Builder().url(playerJs).build()).await().body.string()
-//            file.writeText(js)
-//            js
-//        }
+    private suspend fun getDataFromSite(): Secret {
         val string =
             httpClient.newCall(Request.Builder().url(secretsUrl).build()).await().body.string()
         val (secret, version) = json.decode<Secret>(string)
-//        val (client, clientVersion) = clientVersionRegex.find(jsBody)?.destructured
-//            ?: throw IllegalStateException("Failed to get client version")
-
         val hex = convertToHex(secret)
-        return Data(hex, version, "","")
+        return Secret(hex, version)
     }
 
     suspend fun getToken() =
@@ -150,13 +100,4 @@ class Authentication(
         val code: Int,
         override val message: String,
     ) : Exception(message)
-
-//    @Serializable
-//    data class ClientTokenResponse(
-//        @SerialName("granted_token")
-//        val grantedToken: GrantedToken,
-//    )
-
-//    @Serializable
-//    data class GrantedToken(val token: String)
 }

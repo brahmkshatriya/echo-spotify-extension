@@ -18,7 +18,7 @@ class ADSpotifyExtension : SpotifyExtension() {
             if (!exists()) mkdirs()
         }
 
-//    override val showWidevineStreams = false
+    override val showWidevineStreams = true
 //    override suspend fun getSettingItems(): List<SettingSwitch> {
 //        return listOf(
 //            SettingSwitch(
