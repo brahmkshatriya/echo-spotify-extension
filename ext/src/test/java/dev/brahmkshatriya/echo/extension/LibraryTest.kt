@@ -89,8 +89,6 @@ class LibraryTest {
     @Test
     fun testSearch() = testIn("Testing Search") {
         val searchQuery = "Vump"
-        val quickSearch = extension.quickSearch(searchQuery)
-        quickSearch.forEach { println(it) }
         val feed = extension.loadSearchFeed(searchQuery).getPagedData(Tab("USERS", ""))
         val page = feed.pagedData.loadPage(null)
         println("Page ${page.continuation}: ${page.data}")

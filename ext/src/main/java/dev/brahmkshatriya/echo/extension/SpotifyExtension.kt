@@ -42,12 +42,10 @@ import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.common.settings.SettingSwitch
 import dev.brahmkshatriya.echo.common.settings.Settings
-import dev.brahmkshatriya.echo.extension.spotify.MercuryAccessToken
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
-import dev.brahmkshatriya.echo.extension.spotify.mercury.MercuryConnection
-import dev.brahmkshatriya.echo.extension.spotify.mercury.StoredToken
+import dev.brahmkshatriya.echo.extension.spotify.TokenManagerApp
 import dev.brahmkshatriya.echo.extension.spotify.models.AccountAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.ArtistOverview
 import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
@@ -70,7 +68,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import okhttp3.Request
 import java.io.EOFException
-import java.io.File
 import java.io.InputStream
 import java.math.BigInteger
 import java.net.URLDecoder
@@ -107,16 +104,10 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         setting = settings
     }
 
-    open val cacheDir = File("cache")
-    val api by lazy {
-        SpotifyApi(cacheDir) {
-            val token = cookie
-            if (it.code == 401 && token != null) throw ClientException.Unauthorized(token)
-            else throw it
-        }
-    }
 
-    private val mercuryAccessToken by lazy { MercuryAccessToken(api) }
+    val api by lazy { SpotifyApi() }
+
+    private val tokenManager by lazy { TokenManagerApp(api) }
     val queries by lazy { Queries(api) }
 
     override val webViewRequest = object : WebViewRequest.Cookie<List<User>> {
@@ -129,16 +120,16 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val emailRegex = Regex("remember=([^;]+)")
         override suspend fun onStop(url: NetworkRequest, cookie: String): List<User> {
             if (!cookie.contains("sp_dc")) throw Exception("Token not found")
+            val api = SpotifyApi()
             api.setCookie(cookie)
-            val accessToken = mercuryAccessToken.get()
-            val storedToken = MercuryConnection.getStoredToken(accessToken)
+            val refreshToken = tokenManager.getRefreshToken()
             val email = emailRegex.find(cookie)?.groups?.get(1)?.value?.let {
                 URLDecoder.decode(it, "UTF-8")
             }
             val user = queries.profileAttributes().json.toUser().copy(
                 extras = mapOf(
                     "cookie" to cookie,
-                    "stored_token" to api.json.encode(storedToken)
+                    "refreshToken" to refreshToken
                 ),
                 subtitle = email
             )
@@ -147,14 +138,15 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }
 
     override fun setLoginUser(user: User?) {
-        val (cookie, storedToken) = if (user == null) null to null
+        val (cookie, refreshToken) = if (user == null) null to null
         else {
             val cookie = user.extras["cookie"] ?: throw ClientException.Unauthorized(user.id)
-            val token = user.extras["stored_token"] ?: throw ClientException.Unauthorized(user.id)
-            cookie to api.json.decode<StoredToken>(token)
+            val token = user.extras["refreshToken"] ?: throw ClientException.Unauthorized(user.id)
+            cookie to token
         }
         api.setCookie(cookie)
-        api.storedToken = storedToken
+        api.setUser(user?.id)
+        api.refreshToken = refreshToken
         this.user = user
         this.product = null
     }
@@ -671,7 +663,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     override suspend fun loadLyrics(lyrics: Lyrics) = lyrics
 
     private suspend fun widevineStream(streamable: Streamable): Streamable.Media.Server {
-        val accessToken = api.getAccessToken()
+        val accessToken = api.getWebAccessToken()
         val url = queries.storageResolve(streamable.id).json.cdnUrl.first()
         val time = "time=${System.currentTimeMillis()}"
         val decryption = Streamable.Decryption.Widevine(
@@ -689,18 +681,17 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     var lastFetched = 0L
     val mutex = Mutex()
 
+    open suspend fun getKey(accessToken: String, fileId: String) = "".toByteArray()
+
     private suspend fun oggStream(streamable: Streamable): Streamable.Media {
         val fileId = streamable.id
-        val gid = streamable.extras["gid"]
-            ?: throw IllegalArgumentException("GID is required for streaming")
-        val storedToken = api.storedToken
-            ?: throw IllegalStateException("Spotify stored token is required for streaming")
+        val appAccessToken = api.getAppAccessToken()
 
         val key = mutex.withLock {
             val lastTime = System.currentTimeMillis() - lastFetched
             if (lastTime < time) delay(time - lastTime)
             lastFetched = System.currentTimeMillis()
-            MercuryConnection.getAudioKey(storedToken, gid, fileId)
+            getKey(appAccessToken, fileId)
         }
         val url = queries.storageResolve(streamable.id).json.cdnUrl.random()
         return Streamable.InputProvider { position, length ->

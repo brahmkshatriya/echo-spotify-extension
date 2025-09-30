@@ -1,7 +1,7 @@
 package dev.brahmkshatriya.echo.extension.spotify
 
+import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
-import dev.brahmkshatriya.echo.extension.spotify.mercury.StoredToken
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
@@ -13,25 +13,22 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.internal.closeQuietly
-import java.io.File
 import java.net.URLEncoder
 
-class SpotifyApi(
-    val cacheDir: File,
-    val onError: SpotifyApi.(Authentication.Error) -> Unit
-) {
+class SpotifyApi() {
 
     val cookie get() = _cookie
 
-    private val authMutex = Mutex()
-    val auth = Authentication(this)
+    private val webMutex = Mutex()
+    val web = TokenManagerWeb(this)
+    private val appMutex = Mutex()
+    val app = TokenManagerApp(this)
     private var _cookie: String? = null
     fun setCookie(cookie: String?) {
         _cookie = cookie
-        synchronized(auth) { auth.clear() }
+        synchronized(web) { web.clear() }
+        synchronized(app) { app.clear() }
     }
-
-    var storedToken: StoredToken? = null
 
     val json = Json()
 
@@ -42,12 +39,9 @@ class SpotifyApi(
             builder.addHeader(userAgent.first, userAgent.second)
             builder.addHeader("Accept", "application/json")
             builder.addHeader("App-Platform", "WebPlayer")
-            auth.accessToken?.let {
+            web.accessToken?.let {
                 if (request.headers["Authorization"] == null)
                     builder.addHeader("Authorization", "Bearer $it")
-            }
-            auth.clientToken?.let {
-                builder.addHeader("Client-Token", it)
             }
             chain.proceed(builder.build())
         }
@@ -55,7 +49,7 @@ class SpotifyApi(
 
     data class Response<T>(
         val json: T,
-        val raw: String
+        val raw: String,
     )
 
     suspend fun graphCall(
@@ -79,7 +73,7 @@ class SpotifyApi(
         operationName: String,
         persistedQuery: String,
         variables: JsonObject = buildJsonObject { },
-        print: Boolean = false
+        print: Boolean = false,
     ): Response<T> {
         val raw = graphCall(operationName, persistedQuery, variables)
         if (print) println(raw)
@@ -106,8 +100,9 @@ class SpotifyApi(
     }
 
     suspend fun callGetBody(request: Request): String {
-        runCatching { authMutex.withLock { auth.getToken() } }.getOrElse {
-            if (it is Authentication.Error) onError(it)
+        runCatching { webMutex.withLock { web.getToken() } }.getOrElse {
+            val id = userId
+            if (id != null && it is TokenManagerWeb.Error) throw ClientException.Unauthorized(id)
             throw it
         }
         val response = call(request).body.string()
@@ -127,7 +122,7 @@ class SpotifyApi(
     }
 
     private suspend fun call(
-        request: Request, ignore: Boolean = false, auth: String? = null
+        request: Request, ignore: Boolean = false, auth: String? = null,
     ) = run {
         val req = if (auth == null) request
         else request.newBuilder().addHeader("Authorization", "Bearer $auth").build()
@@ -139,8 +134,18 @@ class SpotifyApi(
         }
     }
 
-    suspend fun getAccessToken(): String {
-        return authMutex.withLock { auth.getToken() }
+    suspend fun getWebAccessToken(): String {
+        return webMutex.withLock { web.getToken() }
+    }
+
+    var userId: String? = null
+    fun setUser(id: String?) {
+        userId = id
+    }
+
+    var refreshToken: String? = null
+    suspend fun getAppAccessToken(): String {
+        return appMutex.withLock { app.getToken() }
     }
 
     companion object {

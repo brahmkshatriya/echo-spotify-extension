@@ -8,10 +8,10 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlin.io.encoding.ExperimentalEncodingApi
 
-class Authentication(
+class TokenManagerWeb(
     private val api: SpotifyApi,
 ) {
-    private val json = Json()
+    private val json = api.json
     val httpClient = OkHttpClient.Builder().addInterceptor {
         val req = it.request().newBuilder()
         val cookie = api.cookie
@@ -23,7 +23,6 @@ class Authentication(
 
     var accessToken: String? = null
     private var tokenExpiration: Long = 0
-    var clientToken: String? = null
 
     private suspend fun createAccessToken(): String {
         val req = Request.Builder().url(getUrl())
