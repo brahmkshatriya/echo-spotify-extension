@@ -20,13 +20,14 @@ class ADSpotifyExtension : SpotifyExtension() {
             .invoke(null) as Application
     }
 
+    override val filesDir by lazy { File(getApplication().filesDir, "spotify") }
     override val showWidevineStreams = false
 
     private val client = OkHttpClient()
 
     override suspend fun getKey(accessToken: String, fileId: String): ByteArray {
         val request = Request.Builder()
-        request.url(Unplayplay.getPlayPlayUrl(fileId))
+        request.url(Unplayplay.getPlayPlayUrl("6f842a801d0460c56c6fef4368f9ea9026c13db2"))
         request.addHeader("Authorization", "Bearer $accessToken")
         request.post(playPlayRequest(Unplayplay.token).toRequestBody())
         val raw = client.newCall(request.build()).await()

@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class, ExperimentalStdlibApi::class)
 class LibreSpotTest {
@@ -26,22 +27,14 @@ class LibreSpotTest {
     }
 
     private val cookie = "sp_dc="
-    private val spotifyApi = SpotifyApi()
+    private val spotifyApi = SpotifyApi(File(""))
 
     @Test
     fun testings() {
         runBlocking {
-            val gid = "7ab971000ff34d01931e1b66203a83f3"
             val fileId = "6f842a801d0460c56c6fef4368f9ea9026c13db2"
+            val key = "a2fb75db3889ee6af1549e1a5fb61674"
 
-            spotifyApi.setCookie(cookie)
-            val manager = spotifyApi.app
-            val token = manager.getRefreshToken()
-            spotifyApi.refreshToken = token
-            val accessToken = spotifyApi.getAppAccessToken()
-            val accessToken2 = spotifyApi.getAppAccessToken()
-            println("Access Token: $accessToken")
-            println("Access Token2: $accessToken2")
         }
     }
 }

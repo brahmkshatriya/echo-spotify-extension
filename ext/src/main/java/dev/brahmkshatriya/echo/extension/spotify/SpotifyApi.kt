@@ -13,16 +13,18 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.internal.closeQuietly
+import java.io.File
 import java.net.URLEncoder
 
-class SpotifyApi() {
-
-    val cookie get() = _cookie
+class SpotifyApi(val filesDir: File) {
+    val json = Json()
 
     private val webMutex = Mutex()
     val web = TokenManagerWeb(this)
     private val appMutex = Mutex()
     val app = TokenManagerApp(this)
+
+    val cookie get() = _cookie
     private var _cookie: String? = null
     fun setCookie(cookie: String?) {
         _cookie = cookie
@@ -30,7 +32,6 @@ class SpotifyApi() {
         synchronized(app) { app.clear() }
     }
 
-    val json = Json()
 
     val client = OkHttpClient.Builder()
         .addInterceptor { chain ->
@@ -143,7 +144,6 @@ class SpotifyApi() {
         userId = id
     }
 
-    var refreshToken: String? = null
     suspend fun getAppAccessToken(): String {
         return appMutex.withLock { app.getToken() }
     }

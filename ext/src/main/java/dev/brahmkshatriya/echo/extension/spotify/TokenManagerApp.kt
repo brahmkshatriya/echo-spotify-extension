@@ -16,7 +16,7 @@ class TokenManagerApp(
     private val api: SpotifyApi,
 ) {
     val client = api.web.httpClient
-    suspend fun getRefreshToken(): String {
+    private suspend fun createRefreshToken(): String {
         val codeVerifier = generateCode()
         val challenge = generateCodeChallenge(codeVerifier)
         val authRequest = Request.Builder().url(getAuthUrl(challenge)).head().build()
@@ -70,14 +70,21 @@ class TokenManagerApp(
         tokenExpiration = 0
     }
 
-    suspend fun getToken() =
-        if (accessToken == null || !isTokenWorking(tokenExpiration)) createAccessToken()
-        else accessToken!!
+    suspend fun getToken(): String {
+        if (accessToken == null || !isTokenWorking(tokenExpiration)) runCatching {
+            val refreshToken = api.filesDir.resolve("refresh.txt").readText()
+            createAccessToken(refreshToken)
+        }.getOrElse {
+            val refreshToken = createRefreshToken()
+            val file = api.filesDir.resolve("refresh.txt")
+            file.parentFile?.mkdirs()
+            file.writeText(refreshToken)
+            createAccessToken(refreshToken)
+        }
+        return accessToken!!
+    }
 
-    private suspend fun createAccessToken(): String {
-        val refreshToken = api.refreshToken
-            ?: throw Exception("Refresh Token not found, Login again")
-
+    private suspend fun createAccessToken(refreshToken: String): String {
         val accessTokenJson = client.newCall(
             Request.Builder()
                 .url("https://accounts.spotify.com/api/token")

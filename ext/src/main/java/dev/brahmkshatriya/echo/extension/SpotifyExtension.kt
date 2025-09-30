@@ -45,7 +45,6 @@ import dev.brahmkshatriya.echo.common.settings.Settings
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
-import dev.brahmkshatriya.echo.extension.spotify.TokenManagerApp
 import dev.brahmkshatriya.echo.extension.spotify.models.AccountAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.ArtistOverview
 import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
@@ -68,6 +67,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import okhttp3.Request
 import java.io.EOFException
+import java.io.File
 import java.io.InputStream
 import java.math.BigInteger
 import java.net.URLDecoder
@@ -104,10 +104,8 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         setting = settings
     }
 
-
-    val api by lazy { SpotifyApi() }
-
-    private val tokenManager by lazy { TokenManagerApp(api) }
+    open val filesDir = File("spotify")
+    val api by lazy { SpotifyApi(filesDir) }
     val queries by lazy { Queries(api) }
 
     override val webViewRequest = object : WebViewRequest.Cookie<List<User>> {
@@ -120,17 +118,13 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val emailRegex = Regex("remember=([^;]+)")
         override suspend fun onStop(url: NetworkRequest, cookie: String): List<User> {
             if (!cookie.contains("sp_dc")) throw Exception("Token not found")
-            val api = SpotifyApi()
+            val api = SpotifyApi(filesDir)
             api.setCookie(cookie)
-            val refreshToken = tokenManager.getRefreshToken()
             val email = emailRegex.find(cookie)?.groups?.get(1)?.value?.let {
                 URLDecoder.decode(it, "UTF-8")
             }
             val user = queries.profileAttributes().json.toUser().copy(
-                extras = mapOf(
-                    "cookie" to cookie,
-                    "refreshToken" to refreshToken
-                ),
+                extras = mapOf("cookie" to cookie),
                 subtitle = email
             )
             return listOf(user)
@@ -138,15 +132,10 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }
 
     override fun setLoginUser(user: User?) {
-        val (cookie, refreshToken) = if (user == null) null to null
-        else {
-            val cookie = user.extras["cookie"] ?: throw ClientException.Unauthorized(user.id)
-            val token = user.extras["refreshToken"] ?: throw ClientException.Unauthorized(user.id)
-            cookie to token
-        }
+        val cookie = if (user == null) null
+        else user.extras["cookie"] ?: throw ClientException.Unauthorized(user.id)
         api.setCookie(cookie)
         api.setUser(user?.id)
-        api.refreshToken = refreshToken
         this.user = user
         this.product = null
     }
@@ -258,7 +247,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             if (showCanvas) async { queries.canvas(track.id).json.toStreamable() } else null
         queries.metadata4Track(track.id).json.toTrack(
             hasPremium,
-            hasPremium,
+            !showWidevineStreams,
             showWidevineStreams,
             canvas?.await()
         ).copy(
@@ -681,7 +670,8 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     var lastFetched = 0L
     val mutex = Mutex()
 
-    open suspend fun getKey(accessToken: String, fileId: String) = "".toByteArray()
+    open suspend fun getKey(accessToken: String, fileId: String): ByteArray =
+        throw IllegalStateException()
 
     private suspend fun oggStream(streamable: Streamable): Streamable.Media {
         val fileId = streamable.id
@@ -692,6 +682,10 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             if (lastTime < time) delay(time - lastTime)
             lastFetched = System.currentTimeMillis()
             getKey(appAccessToken, fileId)
+        }
+        val string = key.toHexString()
+        require(string == "a2fb75db3889ee6af1549e1a5fb61674") {
+            "Invalid key should be a2fb75db3889ee6af1549e1a5fb61674 but was $string"
         }
         val url = queries.storageResolve(streamable.id).json.cdnUrl.random()
         return Streamable.InputProvider { position, length ->
