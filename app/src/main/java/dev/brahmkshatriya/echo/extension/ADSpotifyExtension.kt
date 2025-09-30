@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
+import kotlin.text.hexToByteArray
 
 @Suppress("unused")
 class ADSpotifyExtension : SpotifyExtension() {
@@ -27,10 +28,11 @@ class ADSpotifyExtension : SpotifyExtension() {
 
     override suspend fun getKey(accessToken: String, fileId: String): ByteArray {
         val request = Request.Builder()
-        request.url(Unplayplay.getPlayPlayUrl("6f842a801d0460c56c6fef4368f9ea9026c13db2"))
+        request.url(Unplayplay.getPlayPlayUrl(fileId))
         request.addHeader("Authorization", "Bearer $accessToken")
         request.post(playPlayRequest(Unplayplay.token).toRequestBody())
         val raw = client.newCall(request.build()).await()
-        return playPlayResponse(raw.body.bytes())
+        val key = Unplayplay.deobfuscateKey(fileId.hexToByteArray(), playPlayResponse(raw.body.bytes()))
+        return key
     }
 }

@@ -683,10 +683,6 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             lastFetched = System.currentTimeMillis()
             getKey(appAccessToken, fileId)
         }
-        val string = key.toHexString()
-        require(string == "a2fb75db3889ee6af1549e1a5fb61674") {
-            "Invalid key should be a2fb75db3889ee6af1549e1a5fb61674 but was $string"
-        }
         val url = queries.storageResolve(streamable.id).json.cdnUrl.random()
         return Streamable.InputProvider { position, length ->
             decryptFromPosition(key, AUDIO_IV, position, length) { pos, len ->
