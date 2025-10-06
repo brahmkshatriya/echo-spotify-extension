@@ -657,7 +657,12 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val time = "time=${System.currentTimeMillis()}"
         val decryption = Streamable.Decryption.Widevine(
             "https://spclient.wg.spotify.com/widevine-license/v1/audio/license?$time"
-                .toGetRequest(mapOf("Authorization" to "Bearer $accessToken")),
+                .toGetRequest(
+                    mapOf(
+                        "Authorization" to "Bearer $accessToken",
+                        "Origin" to "https://open.spotify.com",
+                    )
+                ),
             true
         )
         return Streamable.Source.Http(

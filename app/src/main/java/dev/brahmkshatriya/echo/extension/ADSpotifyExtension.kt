@@ -22,7 +22,7 @@ class ADSpotifyExtension : SpotifyExtension() {
     }
 
     override val filesDir by lazy { File(getApplication().filesDir, "spotify") }
-    override val showWidevineStreams = false
+    override val showWidevineStreams = true
 
     private val client = OkHttpClient()
 
@@ -32,6 +32,7 @@ class ADSpotifyExtension : SpotifyExtension() {
         request.addHeader("Authorization", "Bearer $accessToken")
         request.post(playPlayRequest(Unplayplay.token).toRequestBody())
         val raw = client.newCall(request.build()).await()
+        if(!raw.isSuccessful) throw Exception("Error ${raw.code}: ${raw.message}")
         val key = Unplayplay.deobfuscateKey(fileId.hexToByteArray(), playPlayResponse(raw.body.bytes()))
         return key
     }
