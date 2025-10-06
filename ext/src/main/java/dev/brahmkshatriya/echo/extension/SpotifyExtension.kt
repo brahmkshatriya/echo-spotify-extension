@@ -123,7 +123,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             val email = emailRegex.find(cookie)?.groups?.get(1)?.value?.let {
                 URLDecoder.decode(it, "UTF-8")
             }
-            val user = queries.profileAttributes().json.toUser().copy(
+            val user = Queries(api).profileAttributes().json.toUser().copy(
                 extras = mapOf("cookie" to cookie),
                 subtitle = email
             )
