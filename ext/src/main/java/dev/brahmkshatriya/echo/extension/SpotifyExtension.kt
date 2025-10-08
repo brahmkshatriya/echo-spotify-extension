@@ -45,6 +45,8 @@ import dev.brahmkshatriya.echo.common.settings.Settings
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
+import dev.brahmkshatriya.echo.extension.spotify.mercury.MercuryConnection
+import dev.brahmkshatriya.echo.extension.spotify.mercury.StoredToken
 import dev.brahmkshatriya.echo.extension.spotify.models.AccountAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.ArtistOverview
 import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
@@ -246,10 +248,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val canvas =
             if (showCanvas) async { queries.canvas(track.id).json.toStreamable() } else null
         queries.metadata4Track(track.id).json.toTrack(
-            hasPremium,
-            !showWidevineStreams,
-            showWidevineStreams,
-            canvas?.await()
+            hasPremium, hasPremium, showWidevineStreams, canvas?.await()
         ).copy(
             isExplicit = track.isExplicit
         )
@@ -680,13 +679,15 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
     private suspend fun oggStream(streamable: Streamable): Streamable.Media {
         val fileId = streamable.id
-        val appAccessToken = api.getAppAccessToken()
 
         val key = mutex.withLock {
             val lastTime = System.currentTimeMillis() - lastFetched
             if (lastTime < time) delay(time - lastTime)
+            val gid = streamable.extras["gid"]
+                ?: throw IllegalArgumentException("GID is required for streaming")
+            val storedToken = api.getMercuryToken()
             lastFetched = System.currentTimeMillis()
-            getKey(appAccessToken, fileId)
+            MercuryConnection.getAudioKey(storedToken, gid, fileId)
         }
         val url = queries.storageResolve(streamable.id).json.cdnUrl.random()
         return Streamable.InputProvider { position, length ->

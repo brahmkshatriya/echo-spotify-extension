@@ -2,6 +2,8 @@ package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
+import dev.brahmkshatriya.echo.extension.spotify.mercury.MercuryConnection
+import dev.brahmkshatriya.echo.extension.spotify.mercury.StoredToken
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
@@ -146,6 +148,12 @@ class SpotifyApi(val filesDir: File) {
 
     suspend fun getAppAccessToken(): String {
         return appMutex.withLock { app.getToken() }
+    }
+
+    suspend fun getMercuryToken(): StoredToken {
+        return appMutex.withLock {
+            app.getMercuryToken()
+        }
     }
 
     companion object {

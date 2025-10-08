@@ -1,6 +1,8 @@
 package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
+import dev.brahmkshatriya.echo.extension.spotify.mercury.MercuryConnection
+import dev.brahmkshatriya.echo.extension.spotify.mercury.StoredToken
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import okhttp3.FormBody
@@ -65,9 +67,11 @@ class TokenManagerApp(
 
     var accessToken: String? = null
     var tokenExpiration: Long = 0
+    var mercuryToken: StoredToken? = null
     fun clear() {
         accessToken = null
         tokenExpiration = 0
+        mercuryToken = null
     }
 
     suspend fun getToken(): String {
@@ -82,6 +86,23 @@ class TokenManagerApp(
             createAccessToken(refreshToken)
         }
         return accessToken!!
+    }
+
+    suspend fun getMercuryToken(): StoredToken {
+        if (mercuryToken == null) {
+            val file = api.filesDir.resolve("mercury.txt")
+            mercuryToken = if (file.exists()) {
+                val token = api.json.decode<StoredToken>(file.readText())
+                token
+            } else {
+                val accessToken = this.getToken()
+                val token = MercuryConnection.getStoredToken(accessToken)
+                file.parentFile?.mkdirs()
+                file.writeText(api.json.encode<StoredToken>(token))
+                token
+            }
+        }
+        return mercuryToken!!
     }
 
     private suspend fun createAccessToken(refreshToken: String): String {
