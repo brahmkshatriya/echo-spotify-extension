@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
+import dev.brahmkshatriya.echo.extension.spotify.mercury.StoredToken
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
@@ -17,6 +18,7 @@ import java.io.File
 import java.net.URLEncoder
 
 class SpotifyApi(val filesDir: File) {
+    var storedToken: StoredToken? = null
     val json = Json()
 
     private val webMutex = Mutex()
