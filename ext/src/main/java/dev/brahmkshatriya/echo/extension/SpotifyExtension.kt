@@ -42,7 +42,6 @@ import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.common.settings.SettingSwitch
 import dev.brahmkshatriya.echo.common.settings.Settings
-import dev.brahmkshatriya.echo.extension.spotify.MercuryAccessToken
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
@@ -109,7 +108,6 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
     open val filesDir = File("spotify")
     val api by lazy { SpotifyApi(filesDir) }
-    private val mercuryAccessToken by lazy { MercuryAccessToken(api) }
     val queries by lazy { Queries(api) }
 
     override val webViewRequest = object : WebViewRequest.Cookie<List<User>> {
@@ -124,15 +122,11 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             if (!cookie.contains("sp_dc")) throw Exception("Token not found")
             val api = SpotifyApi(filesDir)
             api.setCookie(cookie)
-            val accessToken = mercuryAccessToken.get()
-            val storedToken = MercuryConnection.getStoredToken(accessToken)
             val email = emailRegex.find(cookie)?.groups?.get(1)?.value?.let {
                 URLDecoder.decode(it, "UTF-8")
             }
             val user = Queries(api).profileAttributes().json.toUser().copy(
-                extras = mapOf(
-                    "cookie" to cookie, "stored_token" to api.json.encode(storedToken)
-                ),
+                extras = mapOf("cookie" to cookie),
                 subtitle = email
             )
             return listOf(user)
@@ -140,14 +134,9 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }
 
     override fun setLoginUser(user: User?) {
-        val (cookie, storedToken) = if (user == null) null to null
-        else {
-            val cookie = user.extras["cookie"] ?: throw ClientException.Unauthorized(user.id)
-            val token = user.extras["stored_token"] ?: throw ClientException.Unauthorized(user.id)
-            cookie to api.json.decode<StoredToken>(token)
-        }
+        val cookie = if (user == null) null
+        else user.extras["cookie"] ?: throw ClientException.Unauthorized(user.id)
         api.setCookie(cookie)
-        api.storedToken = storedToken
         api.setUser(user?.id)
         this.user = user
         this.product = null
@@ -690,15 +679,13 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
     private suspend fun oggStream(streamable: Streamable): Streamable.Media {
         val fileId = streamable.id
-        val appAccessToken = api.getAppAccessToken()
 
         val key = mutex.withLock {
             val lastTime = System.currentTimeMillis() - lastFetched
             if (lastTime < time) delay(time - lastTime)
             val gid = streamable.extras["gid"]
                 ?: throw IllegalArgumentException("GID is required for streaming")
-            val storedToken = api.storedToken
-                ?: throw IllegalStateException("Spotify stored token is required for streaming")
+            val storedToken = api.getMercuryToken()
             lastFetched = System.currentTimeMillis()
             MercuryConnection.getAudioKey(storedToken, gid, fileId)
         }
