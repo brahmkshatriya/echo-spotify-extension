@@ -43,6 +43,8 @@ import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.common.settings.SettingSwitch
 import dev.brahmkshatriya.echo.common.settings.Settings
 import dev.brahmkshatriya.echo.extension.spotify.AudioFormat
+import dev.brahmkshatriya.echo.extension.spotify.AudioFormat.FLAC_FLAC
+import dev.brahmkshatriya.echo.extension.spotify.AudioFormat.FLAC_FLAC_24BIT
 import dev.brahmkshatriya.echo.extension.spotify.AudioFormat.OGG_VORBIS_160
 import dev.brahmkshatriya.echo.extension.spotify.AudioFormat.OGG_VORBIS_320
 import dev.brahmkshatriya.echo.extension.spotify.AudioFormat.OGG_VORBIS_96
@@ -220,9 +222,9 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         return when (streamable.type) {
             Streamable.MediaType.Server -> {
                 api.cookie ?: throw ClientException.LoginRequired()
-                val format = AudioFormat.quality(streamable.extras["formatNum"]!!.toInt())
+                val format = streamable.extras["formatNum"]!!.toInt()
                 when (format) {
-                    OGG_VORBIS_320, OGG_VORBIS_160, OGG_VORBIS_96 -> oggStream(format.toString(), streamable)
+                    OGG_VORBIS_320, OGG_VORBIS_160, OGG_VORBIS_96, FLAC_FLAC, FLAC_FLAC_24BIT -> oggStream(format.toString(), streamable)
                     //MP4_256, MP4_128 -> widevineStream(streamable)
                     else -> throw ClientException.NotSupported(AudioFormat.name(format))
                 }
@@ -673,7 +675,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val accessToken = api.getWebAccessToken()
         val key = getKey(api.json, accessToken, fileId)
         return Streamable.InputProvider { position, length ->
-            decryptFromPosition(key, AUDIO_IV, position, length) { pos, len ->
+            decryptFromPosition(format, key, AUDIO_IV, position, length) { pos, len ->
                 val range = "bytes=$pos-${len?.toString() ?: ""}"
                 val request = Request.Builder().url(url)
                     .header("Range", range)
@@ -686,13 +688,15 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }
 
     private suspend fun decryptFromPosition(
+        format: String,
         key: ByteArray,
         iv: BigInteger,
         position: Long,
         length: Long,
         provider: suspend (Long, Long?) -> Pair<InputStream, Long>,
     ): Pair<InputStream, Long> {
-        val byteSkip = 0xA7L
+        val isFLAC = format.toInt() == FLAC_FLAC || format.toInt() == FLAC_FLAC_24BIT
+        val byteSkip = if(isFLAC) 0 else 0xA7L
         val newPos = position + byteSkip
         val alignedPos = newPos - (newPos % 16)
         val blockOffset = (newPos % 16).toInt()
