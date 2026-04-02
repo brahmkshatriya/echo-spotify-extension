@@ -4,11 +4,9 @@ import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.awa
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
 import kotlinx.serialization.Serializable
 import okhttp3.Cookie
-import okhttp3.CookieJar
 import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -21,14 +19,15 @@ class TokenManagerWeb(
     private val api: SpotifyApi,
 ) {
     private val json = api.json
-    val client = OkHttpClient.Builder().addInterceptor {
-        val req = it.request().newBuilder()
-        val cookie = api.cookie
-        if (cookie != null) req.addHeader("Cookie", cookie)
-        req.addHeader(userAgent.first, userAgent.second)
-        req.addHeader("Referer", "https://open.spotify.com/")
-        it.proceed(req.build())
-    }.build()
+    val client = OkHttpClient.Builder()
+        .addInterceptor {
+            val req = it.request().newBuilder()
+            val cookie = api.cookie
+            if (cookie != null) req.addHeader("Cookie", cookie)
+            req.addHeader(userAgent.first, userAgent.second)
+            req.addHeader("Referer", "https://open.spotify.com/")
+            it.proceed(req.build())
+        }.build()
 
     var accessToken: String? = null
     private var tokenExpiration: Long = 0
@@ -191,7 +190,7 @@ class TokenManagerWeb(
     }
 
     private fun newDesktopDeviceFlowClient(spDc: String): OkHttpClient {
-        val cookieJar = InMemoryCookieJar().apply {
+        val cookieStore = DesktopCookieStore().apply {
             seed(
                 Cookie.Builder()
                     .name("sp_dc")
@@ -215,8 +214,33 @@ class TokenManagerWeb(
         }
 
         return client.newBuilder()
-            .cookieJar(cookieJar)
-            .addNetworkInterceptor(desktopFlowHeadersInterceptor("sp_dc=$spDc"))
+            .addNetworkInterceptor { chain ->
+                val original = chain.request()
+                val cookieHeader = mergeCookieHeader(
+                    original.header("Cookie"),
+                    cookieStore.loadForRequest(original.url),
+                )
+
+                val request = original.newBuilder()
+                    .header("User-Agent", DESKTOP_FLOW_USER_AGENT_HEADER)
+                    .apply {
+                        if (cookieHeader.isNotBlank()) {
+                            header("Cookie", cookieHeader)
+                        }
+                        if (original.header("Referer").isNullOrBlank()) {
+                            header("Referer", "https://open.spotify.com/")
+                        }
+                    }
+                    .build()
+
+                val response = chain.proceed(request)
+
+                response.headers("Set-Cookie").forEach { raw ->
+                    Cookie.parse(request.url, raw)?.let(cookieStore::store)
+                }
+
+                response
+            }
             .followRedirects(true)
             .followSslRedirects(true)
             .build()
@@ -296,60 +320,43 @@ class TokenManagerWeb(
         val initialToken: String? = null,
     )
 
-    private fun desktopFlowHeadersInterceptor(cookie: String): Interceptor =
-        Interceptor { chain ->
-            val original = chain.request()
-            val mergedCookie = original.header("Cookie")
-                ?.takeIf { it.isNotBlank() }
-                ?.let {
-                    if (it.contains("sp_dc=")) it else "$it; $cookie"
-                }
-                ?: cookie
+    private fun mergeCookieHeader(
+        originalHeader: String?,
+        scopedCookies: List<Cookie>,
+    ): String {
+        val cookies = linkedMapOf<String, String>()
+        originalHeader
+            ?.split(';')
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() && it.contains('=') }
+            ?.forEach {
+                cookies[it.substringBefore('=')] = it.substringAfter('=')
+            }
+        scopedCookies.forEach { cookies[it.name] = it.value }
+        return cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+    }
 
-            val request = original.newBuilder()
-                .header("Cookie", mergedCookie)
-                .header("User-Agent", DESKTOP_FLOW_USER_AGENT_HEADER)
-                .apply {
-                    if (original.header("Referer").isNullOrBlank()) {
-                        header("Referer", "https://open.spotify.com/")
-                    }
-                }
-                .build()
-            chain.proceed(request)
-        }
-
-    private class InMemoryCookieJar: CookieJar {
+    private class DesktopCookieStore {
         private val cookies = mutableListOf<Cookie>()
 
-        fun seed(cookie: Cookie) {
-            cookies.removeAll {
-                it.name == cookie.name &&
-                        it.domain == cookie.domain &&
-                        it.path == cookie.path
+        @Synchronized
+        fun seed(cookie: Cookie) = store(cookie)
+
+        @Synchronized
+        fun store(cookie: Cookie) {
+            if (cookie.expiresAt <= System.currentTimeMillis()) {
+                cookies.removeAll { it.name == cookie.name && it.domain == cookie.domain && it.path == cookie.path }
+                return
             }
+
+            cookies.removeAll { it.name == cookie.name && it.domain == cookie.domain && it.path == cookie.path }
             cookies += cookie
+            cookies.removeAll { it.expiresAt <= System.currentTimeMillis() }
         }
 
-        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-            val now = System.currentTimeMillis()
-            cookies.forEach { cookie ->
-                if (cookie.expiresAt > now) {
-                    seed(cookie)
-                } else {
-                    this.cookies.removeAll {
-                        it.name == cookie.name &&
-                                it.domain == cookie.domain &&
-                                it.path == cookie.path
-                    }
-                }
-            }
-
-            this.cookies.removeAll { it.expiresAt <= now }
-        }
-
-        override fun loadForRequest(url: HttpUrl): List<Cookie> {
-            val now = System.currentTimeMillis()
-            cookies.removeAll { it.expiresAt <= now }
+        @Synchronized
+        fun loadForRequest(url: HttpUrl): List<Cookie> {
+            cookies.removeAll { it.expiresAt <= System.currentTimeMillis() }
             return cookies.filter { it.matches(url) }
         }
     }
@@ -365,11 +372,9 @@ class TokenManagerWeb(
     }
 
     suspend fun getToken() =
-        if (accessToken == null || !isTokenWorking(tokenExpiration)) createDesktopAccessToken(
-            api.cookie?.substringAfter(
-                "sp_dc="
-            )?.substringBefore(";").orEmpty()
-        )
+        if (accessToken == null || !isTokenWorking(tokenExpiration)) {
+            createDesktopAccessToken(requireSpDc())
+        }
         else accessToken!!
 
     fun clear() {
@@ -379,6 +384,17 @@ class TokenManagerWeb(
 
     private fun isTokenWorking(expiry: Long): Boolean {
         return (System.currentTimeMillis() < expiry)
+    }
+
+    private fun requireSpDc(): String {
+        return api.cookie
+            ?.split(';')
+            ?.asSequence()
+            ?.map { it.trim() }
+            ?.firstOrNull { it.startsWith("sp_dc=") }
+            ?.substringAfter('=')
+            ?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("Spotify cookie is missing sp_dc")
     }
 
     @Serializable
