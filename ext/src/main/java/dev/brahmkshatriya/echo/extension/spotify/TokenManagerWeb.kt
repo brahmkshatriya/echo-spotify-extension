@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
+import dev.brahmkshatriya.echo.extension.spotify.TOTP.convertToHex
 import kotlinx.serialization.Serializable
 import okhttp3.Cookie
 import okhttp3.FormBody
@@ -12,6 +13,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 // Was to lazy, so Claude made it. Judge me if you will - Yours Luft
 
@@ -31,6 +33,47 @@ class TokenManagerWeb(
 
     var accessToken: String? = null
     private var tokenExpiration: Long = 0
+
+    private suspend fun createAnonymousAccessToken(): String {
+        val request = Request.Builder()
+            .url(getAnonymousTokenUrl())
+            .build()
+        client.newCall(request).await().use { response ->
+            val body = response.body.string()
+            val token = runCatching { json.decode<TokenResponse>(body) }.getOrElse {
+                throw runCatching { json.decode<ErrorMessage>(body).error }.getOrElse {
+                    Exception(body.ifEmpty { "Token Code ${response.code}" })
+                }
+            }
+
+            accessToken = token.accessToken
+            tokenExpiration = token.accessTokenExpirationTimestampMs - 5 * 60 * 1000
+            return accessToken!!
+        }
+    }
+
+    @OptIn(ExperimentalStdlibApi::class)
+    private suspend fun getAnonymousTokenUrl(): String {
+        val (secret, version) = getDataFromSite()
+        val time = System.currentTimeMillis()
+        val totp = TOTP.generateTOTP(secret, (time / 30000).toHexString().uppercase())
+        return "https://open.spotify.com/api/token" +
+                "?reason=init&productType=web-player&totp=$totp&totpServer=$totp&totpVer=$version"
+    }
+
+    private val secretsUrl =
+        "https://raw.githubusercontent.com/itsmechinmoy/echo-extensions/refs/heads/main/noidea.txt"
+
+    @OptIn(ExperimentalEncodingApi::class)
+    private suspend fun getDataFromSite(): Secret {
+        val string = client.newCall(
+            Request.Builder()
+                .url(secretsUrl)
+                .build()
+        ).await().body.string()
+        val (secret, version) = json.decode<Secret>(string)
+        return Secret(convertToHex(secret), version)
+    }
 
     companion object {
         private const val DEVICE_AUTH_URL = "https://accounts.spotify.com/oauth2/device/authorize"
@@ -320,6 +363,25 @@ class TokenManagerWeb(
         val initialToken: String? = null,
     )
 
+    @Serializable
+    data class Secret(
+        val secret: String,
+        val version: Int,
+    )
+
+    @Serializable
+    data class TokenResponse(
+        val isAnonymous: Boolean,
+        val accessTokenExpirationTimestampMs: Long,
+        val clientId: String,
+        val accessToken: String,
+    )
+
+    @Serializable
+    data class ErrorMessage(
+        val error: Error,
+    )
+
     private fun mergeCookieHeader(
         originalHeader: String?,
         scopedCookies: List<Cookie>,
@@ -373,7 +435,9 @@ class TokenManagerWeb(
 
     suspend fun getToken() =
         if (accessToken == null || !isTokenWorking(tokenExpiration)) {
-            createDesktopAccessToken(requireSpDc())
+            val spDc = getSpDc()
+            if (spDc.isNullOrBlank()) createAnonymousAccessToken()
+            else createDesktopAccessToken(spDc)
         }
         else accessToken!!
 
@@ -386,7 +450,7 @@ class TokenManagerWeb(
         return (System.currentTimeMillis() < expiry)
     }
 
-    private fun requireSpDc(): String {
+    private fun getSpDc(): String? {
         return api.cookie
             ?.split(';')
             ?.asSequence()
@@ -394,7 +458,6 @@ class TokenManagerWeb(
             ?.firstOrNull { it.startsWith("sp_dc=") }
             ?.substringAfter('=')
             ?.takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("Spotify cookie is missing sp_dc")
     }
 
     @Serializable
