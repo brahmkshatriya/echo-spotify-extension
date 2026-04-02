@@ -35,7 +35,7 @@ class SpotifyApi {
     val client = OkHttpClient.Builder()
         .addInterceptor { chain ->
             val request = chain.request()
-            val builder = chain.request().newBuilder()
+            val builder = request.newBuilder()
             builder.addHeader(userAgent.first, userAgent.second)
             builder.addHeader("Accept", "application/json")
             builder.addHeader("App-Platform", "WebPlayer")

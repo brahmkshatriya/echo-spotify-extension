@@ -31,7 +31,7 @@ class ADSpotifyExtension : SpotifyExtension() {
     override val filesDir by lazy { File(getApplication().filesDir, "spotify") }
     override val showWidevineStreams = true
 
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder().build()
 
     override suspend fun getKey(json: Json, accessToken: String, fileId: String): ByteArray {
         val request = Request.Builder()
