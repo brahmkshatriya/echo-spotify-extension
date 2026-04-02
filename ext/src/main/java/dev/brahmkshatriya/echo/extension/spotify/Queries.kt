@@ -245,8 +245,12 @@ class Queries(
         api.clientQuery<Metadata4Track>("metadata/4/track/$gid")
     }
 
-    suspend fun storageResolve(id: String) = api.clientQuery<StorageResolve>(
-        "storage-resolve/v2/files/audio/interactive/10/$id?version=10000000&product=9&platform=39&alt=json"
+    suspend fun extendedMetadata(id: String) = run {
+        api.clientMutateProto("extended-metadata/v0/extended-metadata", id)
+    }
+
+    suspend fun storageResolve(format: String, id: String) = api.clientQuery<StorageResolve>(
+        "storage-resolve/v2/files/audio/interactive/$format/$id?version=10000000&product=9&platform=39&alt=json"
     )
 
     suspend fun colorLyrics(id: String, img: String) = api.clientQuery<ColorLyrics>(

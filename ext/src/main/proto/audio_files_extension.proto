@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package spotify.extendedmetadata.audiofiles;
+
+option java_package = "spotify.extendedmetadata.audiofiles";
+option java_outer_classname = "AudioFilesExtensionProto";
+option optimize_for = SPEED;
+
+import "extendedmetadata.proto";
+
+message NormalizationParams {
+  float loudness_db = 1;
+  float true_peak_db = 2;
+}
+
+message ExtendedAudioFile {
+  reserved 2;
+  reserved 3;
+
+  spotify.extendedmetadata.AudioFile file = 1;
+  // fields 2, 3 skipped
+  int32 average_bitrate = 4;
+}
+
+message AudioFilesExtensionResponse {
+  repeated ExtendedAudioFile files = 1;
+  NormalizationParams default_file_normalization_params = 2;
+  NormalizationParams default_album_normalization_params = 3;
+  bytes audio_id = 4;
+}

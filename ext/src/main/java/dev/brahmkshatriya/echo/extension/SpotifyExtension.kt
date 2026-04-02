@@ -42,27 +42,21 @@ import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.common.settings.SettingSwitch
 import dev.brahmkshatriya.echo.common.settings.Settings
+import dev.brahmkshatriya.echo.extension.spotify.AudioFormat
+import dev.brahmkshatriya.echo.extension.spotify.AudioFormat.OGG_VORBIS_160
+import dev.brahmkshatriya.echo.extension.spotify.AudioFormat.OGG_VORBIS_320
+import dev.brahmkshatriya.echo.extension.spotify.AudioFormat.OGG_VORBIS_96
+import dev.brahmkshatriya.echo.extension.spotify.Json
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
-import dev.brahmkshatriya.echo.extension.spotify.mercury.MercuryConnection
-import dev.brahmkshatriya.echo.extension.spotify.mercury.StoredToken
 import dev.brahmkshatriya.echo.extension.spotify.models.AccountAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.ArtistOverview
 import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
 import dev.brahmkshatriya.echo.extension.spotify.models.Item
-import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track
-import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track.Format.MP4_128
-import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track.Format.MP4_256
-import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track.Format.OGG_VORBIS_160
-import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track.Format.OGG_VORBIS_320
-import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track.Format.OGG_VORBIS_96
 import dev.brahmkshatriya.echo.extension.spotify.models.UserProfileView
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -107,7 +101,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }
 
     open val filesDir = File("spotify")
-    val api by lazy { SpotifyApi(filesDir) }
+    val api by lazy { SpotifyApi() }
     val queries by lazy { Queries(api) }
 
     override val webViewRequest = object : WebViewRequest.Cookie<List<User>> {
@@ -120,7 +114,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val emailRegex = Regex("remember=([^;]+)")
         override suspend fun onStop(url: NetworkRequest, cookie: String): List<User> {
             if (!cookie.contains("sp_dc")) throw Exception("Token not found")
-            val api = SpotifyApi(filesDir)
+            val api = SpotifyApi()
             api.setCookie(cookie)
             val email = emailRegex.find(cookie)?.groups?.get(1)?.value?.let {
                 URLDecoder.decode(it, "UTF-8")
@@ -226,11 +220,11 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         return when (streamable.type) {
             Streamable.MediaType.Server -> {
                 api.cookie ?: throw ClientException.LoginRequired()
-                val format = Metadata4Track.Format.valueOf(streamable.extras["format"]!!)
-                return when (format) {
-                    OGG_VORBIS_320, OGG_VORBIS_160, OGG_VORBIS_96 -> oggStream(streamable)
-                    MP4_256, MP4_128 -> widevineStream(streamable)
-                    else -> throw ClientException.NotSupported(format.name)
+                val format = AudioFormat.quality(streamable.extras["formatNum"]!!.toInt())
+                when (format) {
+                    OGG_VORBIS_320, OGG_VORBIS_160, OGG_VORBIS_96 -> oggStream(format.toString(), streamable)
+                    //MP4_256, MP4_128 -> widevineStream(streamable)
+                    else -> throw ClientException.NotSupported(AudioFormat.name(format))
                 }
             }
 
@@ -247,8 +241,8 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val hasPremium = hasPremium()
         val canvas =
             if (showCanvas) async { queries.canvas(track.id).json.toStreamable() } else null
-        queries.metadata4Track(track.id).json.toTrack(
-            hasPremium, hasPremium, showWidevineStreams, canvas?.await()
+        queries.extendedMetadata(track.id).toTrack(
+            hasPremium, true, showWidevineStreams, canvas?.await()
         ).copy(
             isExplicit = track.isExplicit
         )
@@ -650,7 +644,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
     override suspend fun loadLyrics(lyrics: Lyrics) = lyrics
 
-    private suspend fun widevineStream(streamable: Streamable): Streamable.Media.Server {
+    /*private suspend fun widevineStream(streamable: Streamable): Streamable.Media.Server {
         val accessToken = api.getWebAccessToken()
         val url = queries.storageResolve(streamable.id).json.cdnUrl.first()
         val time = "time=${System.currentTimeMillis()}"
@@ -668,28 +662,16 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
             request = url.toGetRequest(),
             decryption = decryption,
         ).toMedia()
-    }
+    }*/
 
-    val time = 5000L
-    var lastFetched = 0L
-    val mutex = Mutex()
-
-    open suspend fun getKey(accessToken: String, fileId: String): ByteArray =
+    open suspend fun getKey(json: Json, accessToken: String, fileId: String): ByteArray =
         throw IllegalStateException()
 
-    private suspend fun oggStream(streamable: Streamable): Streamable.Media {
+    private suspend fun oggStream(format: String, streamable: Streamable): Streamable.Media {
         val fileId = streamable.id
-
-        val key = mutex.withLock {
-            val lastTime = System.currentTimeMillis() - lastFetched
-            if (lastTime < time) delay(time - lastTime)
-            val gid = streamable.extras["gid"]
-                ?: throw IllegalArgumentException("GID is required for streaming")
-            val storedToken = api.getMercuryToken()
-            lastFetched = System.currentTimeMillis()
-            MercuryConnection.getAudioKey(storedToken, gid, fileId)
-        }
-        val url = queries.storageResolve(streamable.id).json.cdnUrl.random()
+        val url = queries.storageResolve(format, fileId).json.cdnUrl.first()
+        val accessToken = api.getWebAccessToken()
+        val key = getKey(api.json, accessToken, fileId)
         return Streamable.InputProvider { position, length ->
             decryptFromPosition(key, AUDIO_IV, position, length) { pos, len ->
                 val range = "bytes=$pos-${len?.toString() ?: ""}"
@@ -710,11 +692,13 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         length: Long,
         provider: suspend (Long, Long?) -> Pair<InputStream, Long>,
     ): Pair<InputStream, Long> {
-        val newPos = position + 0xA7
+        val byteSkip = 0xA7L
+        val newPos = position + byteSkip
         val alignedPos = newPos - (newPos % 16)
         val blockOffset = (newPos % 16).toInt()
-        val len = if (length < 0) null else length + newPos - 1
-        val (input, contentLength) = provider(alignedPos, len)
+
+        val endByte = if (length < 0) null else alignedPos + blockOffset + length - 1
+        val (input, contentLength) = provider(alignedPos, endByte)
 
         val ivCounter = iv.add(BigInteger.valueOf(alignedPos / 16))
         val ivBytes = ivCounter.to16ByteArray()
@@ -727,9 +711,8 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         )
 
         val cipherStream = CipherInputStream(input, cipher)
-
         cipherStream.skipBytes(blockOffset)
-        return cipherStream to contentLength - blockOffset
+        return cipherStream to (contentLength - blockOffset)
     }
 
     companion object {
