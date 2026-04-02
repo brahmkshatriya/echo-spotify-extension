@@ -8,6 +8,7 @@ plugins {
 }
 
 dependencies {
+    compileOnly(libs.protobuf.java)
     compileOnly(libs.echo.common)
     compileOnly(libs.kotlin.stdlib)
 
@@ -95,11 +96,6 @@ fun execute(vararg command: String): String = providers.exec {
 
 protobuf {
     protoc {
-        artifact = "com.google.protobuf:protoc:3.24.4"
-    }
-    generateProtoTasks {
-        all().forEach { task ->
-            task.builtins {}
-        }
+        artifact = "com.google.protobuf:protoc:4.32.0"
     }
 }

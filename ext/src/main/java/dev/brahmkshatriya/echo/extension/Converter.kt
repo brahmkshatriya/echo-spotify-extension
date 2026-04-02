@@ -17,6 +17,7 @@ import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.models.User
+import dev.brahmkshatriya.echo.extension.spotify.AudioFormat
 import dev.brahmkshatriya.echo.extension.spotify.Base62
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.models.Albums
@@ -32,7 +33,6 @@ import dev.brahmkshatriya.echo.extension.spotify.models.Item.Wrapper
 import dev.brahmkshatriya.echo.extension.spotify.models.ItemsV2
 import dev.brahmkshatriya.echo.extension.spotify.models.Label
 import dev.brahmkshatriya.echo.extension.spotify.models.LibraryV3
-import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track
 import dev.brahmkshatriya.echo.extension.spotify.models.ProfileAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.Releases
 import dev.brahmkshatriya.echo.extension.spotify.models.SearchDesktop
@@ -42,6 +42,10 @@ import dev.brahmkshatriya.echo.extension.spotify.models.Sections.SectionItem
 import dev.brahmkshatriya.echo.extension.spotify.models.TracksV2
 import dev.brahmkshatriya.echo.extension.spotify.models.UserFollowers
 import dev.brahmkshatriya.echo.extension.spotify.models.UserProfileView
+import spotify.extendedmetadata.metadata.ExtendedMetadataProto
+import spotify.extendedmetadata.metadata.ExtendedMetadataProto.AudioFile.Format
+import spotify.extendedmetadata.metadata.ExtendedMetadataProto.BatchedExtensionResponse
+import spotify.extendedmetadata.audiofiles.AudioFilesExtensionProto.AudioFilesExtensionResponse
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -723,86 +727,117 @@ fun Canvas.toStreamable(): Streamable? {
     )
 }
 
-private fun Metadata4Track.Date.toReleaseDate() =
-    if (year != null) Date(year, month, day) else null
-
-fun Metadata4Track.Format.show(
+fun Format.show(
     hasPremium: Boolean, supportsPlayPlay: Boolean, showWidevineStreams: Boolean,
-) = when (this) {
-    Metadata4Track.Format.OGG_VORBIS_320 -> hasPremium && supportsPlayPlay
-    Metadata4Track.Format.OGG_VORBIS_160 -> supportsPlayPlay
-    Metadata4Track.Format.OGG_VORBIS_96 -> supportsPlayPlay
-    Metadata4Track.Format.MP4_256_DUAL -> false
-    Metadata4Track.Format.MP4_128_DUAL -> false
-    Metadata4Track.Format.MP4_256 -> hasPremium && showWidevineStreams
-    Metadata4Track.Format.MP4_128 -> showWidevineStreams
-    Metadata4Track.Format.AAC_24 -> false
-    Metadata4Track.Format.MP3_96 -> false
+) = when(this) {
+    Format.FLAC_FLAC, Format.FLAC_FLAC_24BIT, Format.OGG_VORBIS_320 -> hasPremium && supportsPlayPlay
+    Format.OGG_VORBIS_160 -> supportsPlayPlay
+    Format.OGG_VORBIS_96 -> supportsPlayPlay
+    Format.MP4_256 -> hasPremium && showWidevineStreams
+    Format.MP4_128 -> showWidevineStreams
+    else -> false
 }
 
-fun Metadata4Track.toTrack(
+private fun BatchedExtensionResponse.extensionBytes(
+    kind: ExtendedMetadataProto.ExtensionKind
+): ByteArray? =
+    extendedMetadataList
+        .firstOrNull { it.extensionKind == kind }
+        ?.extensionDataList
+        ?.firstOrNull()
+        ?.takeIf { it.hasExtensionData() }
+        ?.extensionData?.value?.toByteArray()
+
+private fun ByteArray.toHex(): String =
+    joinToString("") { "%02x".format(it) }
+
+fun BatchedExtensionResponse.toTrack(
     hasPremium: Boolean,
     supportsPlayPlay: Boolean,
     showWidevineStreams: Boolean,
     canvas: Streamable?,
 ): Track {
-    val id = "spotify:track:${Base62.encode(gid!!)}"
-    val title = name!!
-    val streamables = (file ?: alternative?.firstOrNull()?.file).orEmpty().mapNotNull {
-        val fileId = it.fileId ?: return@mapNotNull null
-        val format = it.format ?: return@mapNotNull null
 
-        if (!format.show(hasPremium, supportsPlayPlay, showWidevineStreams)) return@mapNotNull null
-        Streamable.server(
-            id = fileId,
-            quality = format.quality,
-            title = format.name.replace('_', ' '),
-            extras = mapOf(
-                "format" to it.format.name,
-                "gid" to gid
+    val trackBytes = extensionBytes(ExtendedMetadataProto.ExtensionKind.TRACK_V4) ?: ByteArray(0)
+    val trackProto = if (trackBytes.isNotEmpty())
+        ExtendedMetadataProto.Track.parseFrom(trackBytes) else null
+
+    val audioFilesBytes = extensionBytes(ExtendedMetadataProto.ExtensionKind.AUDIO_FILES) ?: ByteArray(0)
+    val audioFiles = if (audioFilesBytes.isNotEmpty())
+        AudioFilesExtensionResponse.parseFrom(audioFilesBytes) else null
+
+    val gid = trackProto?.takeIf { it.hasGid() }?.gid?.toByteArray()
+    val id = "spotify:track:${Base62.encode(gid?.toHex() ?: "")}"
+    val title = trackProto?.name ?: ""
+
+    val streamables = mutableListOf<Streamable>()
+    audioFiles?.filesList?.forEach {
+        it.takeIf { it.file.format.show(hasPremium, supportsPlayPlay, showWidevineStreams) }?.let { audio ->
+            val file = audio.file
+            val formatName = file.format.name
+            val formatNum = file.format.number
+            val fileIdHex = file.fileId.toByteArray().toHex()
+            streamables.add(
+                Streamable.server(
+                    id = fileIdHex,
+                    quality = AudioFormat.quality(formatNum),
+                    title = formatName.replace("_", " "),
+                    extras = mapOf(
+                        "fileId" to fileIdHex,
+                        "formatNum" to formatNum.toString(),
+                        "formatName" to formatName,
+                        "gid" to (gid?.toHex() ?: ""),
+                    )
+                )
             )
-        )
+        }
     }
-    val alb = album?.let { album ->
-        val gid = album.gid ?: return@let null
-        val albumId = Base62.encode(gid)
+
+    val alb = trackProto?.takeIf { it.hasAlbum() }?.album?.let { album ->
+        if (!album.hasGid()) return@let null
+        val albumGid = album.gid.toByteArray()
+        val albumId = Base62.encode(albumGid.toHex())
         Album(
             id = "spotify:album:$albumId",
-            title = album.name ?: return@let null,
-            cover = album.coverGroup?.image?.lastOrNull()?.fileId?.let {
-                "https://i.scdn.co/image/$it".toImageHolder()
+            title = album.name.ifEmpty { return@let null },
+            cover = album.takeIf { it.hasCoverGroup() }?.coverGroup?.imageList
+                ?.lastOrNull()?.takeIf { it.hasFileId() }?.fileId?.toByteArray()?.let {
+                    "https://i.scdn.co/image/${it.toHex()}".toImageHolder()
+                },
+            artists = album.artistList.mapNotNull {
+                if (!it.hasGid()) return@mapNotNull null
+                val artistGid = it.gid.toByteArray()
+                val artistId = Base62.encode(artistGid.toHex())
+                Artist("spotify:artist:$artistId", it.name.ifEmpty { return@mapNotNull null })
             },
-            artists = album.artist?.mapNotNull {
-                val artistGid = it.gid ?: return@mapNotNull null
-                val artistId = Base62.encode(artistGid)
-                Artist("spotify:artist:$artistId", it.name ?: return@mapNotNull null)
-            }.orEmpty(),
-            label = album.label,
-            releaseDate = album.date?.toReleaseDate(),
+            label = if (album.hasLabel()) album.label else null,
         )
     }
+
+    val artists = (trackProto?.artistWithRoleList ?: emptyList()).mapNotNull {
+        if (!it.hasArtistGid()) return@mapNotNull null
+        val artistGid = it.artistGid.toByteArray()
+        val artistId = Base62.encode(artistGid.toHex())
+        val name = it.artistName.ifEmpty { return@mapNotNull null }
+        val roleName = it.role.name.removePrefix("ARTIST_ROLE_").replace('_', ' ').lowercase()
+            .replaceFirstChar { c -> c.uppercase() }
+        Artist("spotify:artist:$artistId", name, subtitle = roleName)
+    }
+
     return Track(
         id = id,
         title = title,
         cover = alb?.cover,
         streamables = if (canvas != null) streamables + canvas else streamables,
-        duration = duration,
-        artists = artistWithRole?.mapNotNull {
-            val gid = it.artistGid ?: return@mapNotNull null
-            val artistId = Base62.encode(gid)
-            val name = it.artistName ?: return@mapNotNull null
-            val subtitle = it.role?.split('_')?.joinToString(" ") { s ->
-                s.lowercase().replaceFirstChar { char -> char.uppercaseChar() }
-            }
-            Artist("spotify:artist:$artistId", name, subtitle = subtitle)
-        } ?: listOf(),
+        duration = (trackProto?.duration ?: 0).toLong(),
+        artists = artists,
         album = alb,
-        albumOrderNumber = number,
-        albumDiscNumber = discNumber,
-        isrc = externalId?.firstOrNull()?.id,
+        albumOrderNumber = (trackProto?.number ?: 0).toLong(),
+        albumDiscNumber = (trackProto?.discNumber ?: 0).toLong(),
+        isrc = trackProto?.externalIdList?.firstOrNull()?.id,
         releaseDate = alb?.releaseDate,
-        description = album?.label,
-        isExplicit = explicit == true,
+        description = trackProto?.takeIf { it.hasAlbum() && it.album.hasLabel() }?.album?.label,
+        isExplicit = trackProto?.explicit ?: false,
     )
 }
 

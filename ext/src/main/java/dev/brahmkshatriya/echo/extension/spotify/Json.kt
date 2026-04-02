@@ -1,6 +1,5 @@
 package dev.brahmkshatriya.echo.extension.spotify
 
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class Json {
