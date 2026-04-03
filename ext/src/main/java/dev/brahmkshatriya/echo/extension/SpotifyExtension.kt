@@ -551,11 +551,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
     override suspend fun getFollowersCount(item: EchoMediaItem): Long? {
         if (item !is Artist) return null
-        val type = item.id.substringAfter(":").substringBefore(":")
-        val id = item.id.substringAfter("spotify:$type:")
-        val req = Request.Builder().url("https://api.spotify.com/v1/${type}s/$id").build()
-        val json = api.run { json.decode<JsonObject>(callGetBody(req)) }
-        return json["followers"]?.jsonObject?.get("total")?.jsonPrimitive?.long
+        return item.extras["followers"]?.toLong()
     }
 
     override suspend fun followItem(item: EchoMediaItem, shouldFollow: Boolean) {
@@ -601,8 +597,9 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         when (val type = artist.id.substringAfter(":").substringBefore(":")) {
             "artist" -> {
                 val res = queries.queryArtistOverview(artist.id)
-                return res.json.data.artistUnion.toArtist(null, cropCovers)!!.copy(
-                    extras = mapOf("raw" to res.raw)
+                val artist = res.json.data.artistUnion.toArtist(null, cropCovers)
+                return artist!!.copy(
+                    extras = artist.extras + mapOf("raw" to res.raw)
                 )
             }
 

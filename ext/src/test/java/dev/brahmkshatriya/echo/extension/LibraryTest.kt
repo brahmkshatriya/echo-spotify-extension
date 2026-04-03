@@ -62,7 +62,7 @@ class LibraryTest {
     fun testCurrentUser() = testIn("Testing current user") {
         val user = extension.getCurrentUser()
         println(user)
-        println(extension.queries.metadata4Track("0rVjrie60R2vHEla6eVTOj"))
+        println(extension.queries.extendedMetadata("spotify:track:0rVjrie60R2vHEla6eVTOj"))
     }
 
     private suspend fun Shelf.print() {
