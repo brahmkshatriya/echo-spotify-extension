@@ -265,7 +265,10 @@ fun IArtist.toArtist(type: String? = null, cropCovers: Boolean): Artist? {
         name = profile?.name ?: return null,
         cover = visuals?.avatarImage?.toImageHolder(cropCovers),
         subtitle = type,
-        bio = profile?.biography?.text?.removeHtml()
+        bio = profile?.biography?.text?.removeHtml(),
+        extras = mapOf(
+            "followers" to stats?.followers.toString()
+        )
     )
 }
 

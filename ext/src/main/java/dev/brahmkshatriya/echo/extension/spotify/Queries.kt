@@ -240,10 +240,10 @@ class Queries(
         }
     )
 
-    suspend fun metadata4Track(id: String) = run {
+    /*suspend fun metadata4Track(id: String) = run {
         val gid = Base62.decode(id.substringAfter("spotify:track:"))
         api.clientQuery<Metadata4Track>("metadata/4/track/$gid")
-    }
+    }*/
 
     suspend fun extendedMetadata(id: String) = run {
         api.clientMutateProto("extended-metadata/v0/extended-metadata", id)
