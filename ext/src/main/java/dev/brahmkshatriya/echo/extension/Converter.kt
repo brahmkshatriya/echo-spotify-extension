@@ -31,7 +31,6 @@ import dev.brahmkshatriya.echo.extension.spotify.models.ITrack
 import dev.brahmkshatriya.echo.extension.spotify.models.Item
 import dev.brahmkshatriya.echo.extension.spotify.models.Item.Wrapper
 import dev.brahmkshatriya.echo.extension.spotify.models.ItemsV2
-import dev.brahmkshatriya.echo.extension.spotify.models.Label
 import dev.brahmkshatriya.echo.extension.spotify.models.LibraryV3
 import dev.brahmkshatriya.echo.extension.spotify.models.ProfileAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.Releases
@@ -42,10 +41,10 @@ import dev.brahmkshatriya.echo.extension.spotify.models.Sections.SectionItem
 import dev.brahmkshatriya.echo.extension.spotify.models.TracksV2
 import dev.brahmkshatriya.echo.extension.spotify.models.UserFollowers
 import dev.brahmkshatriya.echo.extension.spotify.models.UserProfileView
+import spotify.extendedmetadata.audiofiles.AudioFilesExtensionProto.AudioFilesExtensionResponse
 import spotify.extendedmetadata.metadata.ExtendedMetadataProto
 import spotify.extendedmetadata.metadata.ExtendedMetadataProto.AudioFile.Format
 import spotify.extendedmetadata.metadata.ExtendedMetadataProto.BatchedExtensionResponse
-import spotify.extendedmetadata.audiofiles.AudioFilesExtensionProto.AudioFilesExtensionResponse
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -153,7 +152,7 @@ fun ITrack.toTrack(
         cover = album?.cover,
         artists = artists.toArtists(null, cropCovers),
         album = album,
-        isExplicit = contentRating?.label == Label.EXPLICIT,
+        isExplicit = contentRating?.isExplicit() ?: false,
         duration = duration?.totalMilliseconds ?: trackDuration?.totalMilliseconds,
         plays = playcount?.toLong(),
         releaseDate = album?.releaseDate,
@@ -525,7 +524,7 @@ fun Item.toMediaItem(cropCovers: Boolean): EchoMediaItem? {
             cover = coverArt?.toImageHolder(cropCovers),
             description = description?.removeHtml(),
             album = podcastV2?.data?.toAlbum(cropCovers),
-            isExplicit = contentRating?.label == Label.EXPLICIT,
+            isExplicit = contentRating?.isExplicit() ?: false,
             duration = duration?.totalMilliseconds,
             releaseDate = releaseDate?.toDate(),
         )
@@ -538,7 +537,7 @@ fun Item.toMediaItem(cropCovers: Boolean): EchoMediaItem? {
             cover = coverArt?.toImageHolder(cropCovers),
             description = description?.removeHtml(),
             album = audiobookV2?.data?.toAlbum(cropCovers),
-            isExplicit = contentRating?.label == Label.EXPLICIT,
+            isExplicit = contentRating?.isExplicit() ?: false,
             duration = duration?.totalMilliseconds,
         )
 
@@ -732,7 +731,7 @@ fun Canvas.toStreamable(): Streamable? {
 
 fun Format.show(
     hasPremium: Boolean, supportsPlayPlay: Boolean, showWidevineStreams: Boolean,
-) = when(this) {
+) = when (this) {
     Format.FLAC_FLAC, Format.FLAC_FLAC_24BIT, Format.OGG_VORBIS_320 -> hasPremium && supportsPlayPlay
     Format.OGG_VORBIS_160 -> supportsPlayPlay
     Format.OGG_VORBIS_96 -> supportsPlayPlay
@@ -765,7 +764,8 @@ fun BatchedExtensionResponse.toTrack(
     val trackProto = if (trackBytes.isNotEmpty())
         ExtendedMetadataProto.Track.parseFrom(trackBytes) else null
 
-    val audioFilesBytes = extensionBytes(ExtendedMetadataProto.ExtensionKind.AUDIO_FILES) ?: ByteArray(0)
+    val audioFilesBytes =
+        extensionBytes(ExtendedMetadataProto.ExtensionKind.AUDIO_FILES) ?: ByteArray(0)
     val audioFiles = if (audioFilesBytes.isNotEmpty())
         AudioFilesExtensionResponse.parseFrom(audioFilesBytes) else null
 
@@ -775,25 +775,26 @@ fun BatchedExtensionResponse.toTrack(
 
     val streamables = mutableListOf<Streamable>()
     audioFiles?.filesList?.forEach {
-        it.takeIf { it.file.format.show(hasPremium, supportsPlayPlay, showWidevineStreams) }?.let { audio ->
-            val file = audio.file
-            val formatName = file.format.name
-            val formatNum = file.format.number
-            val fileIdHex = file.fileId.toByteArray().toHex()
-            streamables.add(
-                Streamable.server(
-                    id = fileIdHex,
-                    quality = AudioFormat.quality(formatNum),
-                    title = formatName.replace("_", " "),
-                    extras = mapOf(
-                        "fileId" to fileIdHex,
-                        "formatNum" to formatNum.toString(),
-                        "formatName" to formatName,
-                        "gid" to (gid?.toHex() ?: ""),
+        it.takeIf { it.file.format.show(hasPremium, supportsPlayPlay, showWidevineStreams) }
+            ?.let { audio ->
+                val file = audio.file
+                val formatName = file.format.name
+                val formatNum = file.format.number
+                val fileIdHex = file.fileId.toByteArray().toHex()
+                streamables.add(
+                    Streamable.server(
+                        id = fileIdHex,
+                        quality = AudioFormat.quality(formatNum),
+                        title = formatName.replace("_", " "),
+                        extras = mapOf(
+                            "fileId" to fileIdHex,
+                            "formatNum" to formatNum.toString(),
+                            "formatName" to formatName,
+                            "gid" to (gid?.toHex() ?: ""),
+                        )
                     )
                 )
-            )
-        }
+            }
     }
 
     val alb = trackProto?.takeIf { it.hasAlbum() }?.album?.let { album ->
