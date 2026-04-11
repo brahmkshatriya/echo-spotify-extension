@@ -27,7 +27,7 @@ class LibreSpotTest {
     }
 
     private val cookie = "sp_dc="
-    private val spotifyApi = SpotifyApi(File(""))
+    private val spotifyApi = SpotifyApi()
 
     @Test
     fun testings() {

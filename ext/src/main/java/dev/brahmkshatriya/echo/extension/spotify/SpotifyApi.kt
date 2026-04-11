@@ -8,7 +8,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -29,20 +28,46 @@ class SpotifyApi {
     fun setCookie(cookie: String?) {
         _cookie = cookie
         synchronized(web) { web.clear() }
+        clientTokenManager.clear()
     }
 
+
+    val clientTokenManager = ClientTokenManager(this)
 
     val client = OkHttpClient.Builder()
         .addInterceptor { chain ->
             val request = chain.request()
             val builder = request.newBuilder()
-            builder.addHeader(userAgent.first, userAgent.second)
-            builder.addHeader("Accept", "application/json")
-            builder.addHeader("App-Platform", "WebPlayer")
-            web.accessToken?.let {
-                if (request.headers["Authorization"] == null)
-                    builder.addHeader("Authorization", "Bearer $it")
+            val host = request.url.host
+
+            builder.header("User-Agent", WebPlayerConfig.USER_AGENT)
+            builder.header("sec-ch-ua", WebPlayerConfig.SEC_CH_UA)
+            builder.header("sec-ch-ua-mobile", WebPlayerConfig.SEC_CH_UA_MOBILE)
+            builder.header("sec-ch-ua-platform", WebPlayerConfig.SEC_CH_UA_PLATFORM)
+            builder.header("Origin", WebPlayerConfig.ORIGIN)
+            builder.header("Referer", WebPlayerConfig.REFERER)
+            builder.header("Sec-Fetch-Dest", "empty")
+            builder.header("Sec-Fetch-Mode", "cors")
+            builder.header("Sec-Fetch-Site", "same-site")
+            builder.header("Accept-Language", WebPlayerConfig.ACCEPT_LANGUAGE)
+            builder.header("App-Platform", WebPlayerConfig.APP_PLATFORM)
+
+            if (request.header("Accept") == null) {
+                builder.header("Accept", "application/json")
             }
+
+            val isClientTokenEndpoint = host.contains("clienttoken")
+            if (!isClientTokenEndpoint) {
+                web.accessToken?.let {
+                    if (request.header("Authorization") == null)
+                        builder.header("Authorization", "Bearer $it")
+                }
+                clientTokenManager.clientToken?.let {
+                    builder.header("client-token", it)
+                }
+                builder.header("spotify-app-version", WebPlayerConfig.appVersion)
+            }
+
             chain.proceed(builder.build())
         }
         .build()
@@ -133,16 +158,9 @@ class SpotifyApi {
         val raw = callGetBodyBytes(
             Request.Builder()
                 .url("https://gew4-spclient.spotify.com/$path")
-                .headers(Headers.headersOf(
-                    "origin", "https://open.spotify.com/",
-                    "referer", "https://open.spotify.com/",
-                    "spotify-app-version", "1.2.87.27.ga2033a72",
-                    "app-platform", "WebPlayer",
-                    "Accept", "application/x-protobuf",
-                    "Content-Type", "application/x-protobuf",
-                    "client-token", "AAAyQwhc1wWtqYH7spRtLROv2auz6t7xi6xV0OIlc62hyvNrbjR3Lky8Lh2s7fi8jbjX1k31NBQ6d+mpEcAyXCvrNDmZSgTjuJ1QBVzqHOpP5t4E4kDvB36AfvXmcgZltN5dYgbiHal/R2LNupoZvT1fKocen24bUAHsInYgCtKy+kft4OWN1kaFo8LfNZymZzmXBXfxKfCiO1dKBQPz7Rv5hVPpcoyxkfAl4R5aNdap3iuRdAcaB4Udx28Eu98yrA=="
-                ))
-                .post(requestBytes.toRequestBody("application/protobuf".toMediaType()))
+                .header("Accept", "application/x-protobuf")
+                .header("Content-Type", "application/x-protobuf")
+                .post(requestBytes.toRequestBody("application/x-protobuf".toMediaType()))
                 .build()
         )
 
@@ -150,7 +168,10 @@ class SpotifyApi {
     }
 
     suspend fun callGetBody(request: Request): String {
-        runCatching { webMutex.withLock { web.getToken() } }.getOrElse {
+        runCatching {
+            webMutex.withLock { web.getToken() }
+            clientTokenManager.ensureValid()
+        }.getOrElse {
             val id = userId
             if (id != null && it is TokenManagerWeb.Error) throw ClientException.Unauthorized(id)
             throw it
@@ -162,7 +183,10 @@ class SpotifyApi {
     }
 
     suspend fun callGetBodyBytes(request: Request): ByteArray {
-        runCatching { webMutex.withLock { web.getToken() } }.getOrElse {
+        runCatching {
+            webMutex.withLock { web.getToken() }
+            clientTokenManager.ensureValid()
+        }.getOrElse {
             val id = userId
             if (id != null && it is TokenManagerWeb.Error) throw ClientException.Unauthorized(id)
             throw it
@@ -209,7 +233,5 @@ class SpotifyApi {
 
     companion object {
         fun urlEncode(data: String): String = URLEncoder.encode(data, "UTF-8")
-        val userAgent =
-            "user-agent" to "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36"
     }
 }

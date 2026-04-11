@@ -1,7 +1,6 @@
 package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
-import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
 import dev.brahmkshatriya.echo.extension.spotify.TOTP.convertToHex
 import kotlinx.serialization.Serializable
 import okhttp3.Cookie
@@ -26,12 +25,14 @@ class TokenManagerWeb(
             val req = it.request().newBuilder()
             val cookie = api.cookie
             if (cookie != null) req.addHeader("Cookie", cookie)
-            req.addHeader(userAgent.first, userAgent.second)
-            req.addHeader("Referer", "https://open.spotify.com/")
+            req.addHeader("User-Agent", WebPlayerConfig.USER_AGENT)
+            req.addHeader("Referer", WebPlayerConfig.REFERER)
             it.proceed(req.build())
         }.build()
 
     var accessToken: String? = null
+    var clientId: String? = null
+        private set
     private var tokenExpiration: Long = 0
 
     private suspend fun createAnonymousAccessToken(): String {
@@ -47,7 +48,9 @@ class TokenManagerWeb(
             }
 
             accessToken = token.accessToken
+            clientId = token.clientId
             tokenExpiration = token.accessTokenExpirationTimestampMs - 5 * 60 * 1000
+            fetchAppVersion()
             return accessToken!!
         }
     }
@@ -100,12 +103,15 @@ class TokenManagerWeb(
             """<script id="__NEXT_DATA__" type="application/json"[^>]*>(.*?)</script>""",
             setOf(RegexOption.DOT_MATCHES_ALL),
         )
+
+        private val APP_VERSION_REGEX = Regex(""""appVersion":"([^"]+)"""")
     }
 
     suspend fun createDesktopAccessToken(spDc: String): String {
         val aT = createDesktopAccessTokenData(spDc)
         accessToken = aT.accessToken
         tokenExpiration = System.currentTimeMillis() + aT.expiresIn.toLong() * 1000
+        fetchAppVersion()
         return accessToken!!
     }
 
@@ -441,8 +447,24 @@ class TokenManagerWeb(
         }
         else accessToken!!
 
+    private suspend fun fetchAppVersion() {
+        runCatching {
+            val request = Request.Builder()
+                .url("https://open.spotify.com")
+                .build()
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) return
+                val html = response.body.string()
+                APP_VERSION_REGEX.find(html)?.groupValues?.get(1)?.let {
+                    WebPlayerConfig.appVersion = it
+                }
+            }
+        }
+    }
+
     fun clear() {
         accessToken = null
+        clientId = null
         tokenExpiration = 0
     }
 
