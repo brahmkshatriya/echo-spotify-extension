@@ -51,7 +51,7 @@ import dev.brahmkshatriya.echo.extension.spotify.AudioFormat.OGG_VORBIS_96
 import dev.brahmkshatriya.echo.extension.spotify.Json
 import dev.brahmkshatriya.echo.extension.spotify.Queries
 import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi
-import dev.brahmkshatriya.echo.extension.spotify.SpotifyApi.Companion.userAgent
+import dev.brahmkshatriya.echo.extension.spotify.WebPlayerConfig
 import dev.brahmkshatriya.echo.extension.spotify.models.AccountAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.ArtistOverview
 import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
@@ -109,7 +109,9 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     override val webViewRequest = object : WebViewRequest.Cookie<List<User>> {
         override val dontCache = true
         override val initialUrl =
-            "https://accounts.spotify.com/en/login?allow_password=1".toGetRequest(mapOf(userAgent))
+            "https://accounts.spotify.com/en/login?allow_password=1".toGetRequest(
+                mapOf("User-Agent" to WebPlayerConfig.USER_AGENT)
+            )
         override val stopUrlRegex =
             Regex("(https://accounts\\.spotify\\.com/.{2}/status.*)|(https://open\\.spotify\\.com)")
 
