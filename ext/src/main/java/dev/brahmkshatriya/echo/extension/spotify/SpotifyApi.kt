@@ -2,6 +2,7 @@ package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ClientException
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
+import dev.brahmkshatriya.echo.common.settings.Settings
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
@@ -16,12 +17,16 @@ import okhttp3.internal.closeQuietly
 import spotify.extendedmetadata.metadata.ExtendedMetadataProto
 import spotify.extendedmetadata.metadata.ExtendedMetadataProto.BatchedExtensionResponse
 import java.net.URLEncoder
+import java.security.SecureRandom
 
 class SpotifyApi {
     val json = Json()
 
     private val webMutex = Mutex()
-    val web = TokenManagerWeb(this)
+    val web = TokenManagerDesktop(this)
+
+    @Volatile var settings: Settings? = null
+    private var cachedDeviceId: String? = null
 
     val cookie get() = _cookie
     private var _cookie: String? = null
@@ -31,6 +36,21 @@ class SpotifyApi {
         clientTokenManager.clear()
     }
 
+    val isDesktopPersona: Boolean
+        get() = !_cookie.isNullOrBlank()
+
+    fun deviceId(): String {
+        cachedDeviceId?.let { return it }
+        return synchronized(this) {
+            cachedDeviceId?.let { return@synchronized it }
+            val stored = settings?.getString(DEVICE_ID_KEY)?.takeIf { it.isNotBlank() }
+            val id = stored ?: generateDeviceId().also {
+                runCatching { settings?.putString(DEVICE_ID_KEY, it) }
+            }
+            cachedDeviceId = id
+            id
+        }
+    }
 
     val clientTokenManager = ClientTokenManager(this)
 
@@ -40,17 +60,8 @@ class SpotifyApi {
             val builder = request.newBuilder()
             val host = request.url.host
 
-            builder.header("User-Agent", WebPlayerConfig.USER_AGENT)
-            builder.header("sec-ch-ua", WebPlayerConfig.SEC_CH_UA)
-            builder.header("sec-ch-ua-mobile", WebPlayerConfig.SEC_CH_UA_MOBILE)
-            builder.header("sec-ch-ua-platform", WebPlayerConfig.SEC_CH_UA_PLATFORM)
-            builder.header("Origin", WebPlayerConfig.ORIGIN)
-            builder.header("Referer", WebPlayerConfig.REFERER)
-            builder.header("Sec-Fetch-Dest", "empty")
-            builder.header("Sec-Fetch-Mode", "cors")
-            builder.header("Sec-Fetch-Site", "same-site")
-            builder.header("Accept-Language", WebPlayerConfig.ACCEPT_LANGUAGE)
-            builder.header("App-Platform", WebPlayerConfig.APP_PLATFORM)
+            val desktop = isDesktopPersona
+            if (desktop) applyDesktopHeaders(builder) else applyWebHeaders(builder)
 
             if (request.header("Accept") == null) {
                 builder.header("Accept", "application/json")
@@ -65,12 +76,35 @@ class SpotifyApi {
                 clientTokenManager.clientToken?.let {
                     builder.header("client-token", it)
                 }
-                builder.header("spotify-app-version", WebPlayerConfig.appVersion)
+                builder.header(
+                    "spotify-app-version",
+                    if (desktop) DesktopConfig.appVersion else WebPlayerConfig.appVersion,
+                )
             }
 
             chain.proceed(builder.build())
         }
         .build()
+
+    private fun applyDesktopHeaders(builder: Request.Builder) {
+        builder.header("User-Agent", DesktopConfig.userAgent)
+        builder.header("App-Platform", DesktopConfig.PLATFORM_HEADER)
+        builder.header("Accept-Language", DesktopConfig.ACCEPT_LANGUAGE)
+    }
+
+    private fun applyWebHeaders(builder: Request.Builder) {
+        builder.header("User-Agent", WebPlayerConfig.USER_AGENT)
+        builder.header("sec-ch-ua", WebPlayerConfig.SEC_CH_UA)
+        builder.header("sec-ch-ua-mobile", WebPlayerConfig.SEC_CH_UA_MOBILE)
+        builder.header("sec-ch-ua-platform", WebPlayerConfig.SEC_CH_UA_PLATFORM)
+        builder.header("Origin", WebPlayerConfig.ORIGIN)
+        builder.header("Referer", WebPlayerConfig.REFERER)
+        builder.header("Sec-Fetch-Dest", "empty")
+        builder.header("Sec-Fetch-Mode", "cors")
+        builder.header("Sec-Fetch-Site", "same-site")
+        builder.header("Accept-Language", WebPlayerConfig.ACCEPT_LANGUAGE)
+        builder.header("App-Platform", WebPlayerConfig.APP_PLATFORM)
+    }
 
     data class Response<T>(
         val json: T,
@@ -157,7 +191,7 @@ class SpotifyApi {
         ))
         val raw = callGetBodyBytes(
             Request.Builder()
-                .url("https://gew4-spclient.spotify.com/$path")
+                .url("https://spclient.wg.spotify.com/$path")
                 .header("Accept", "application/x-protobuf")
                 .header("Content-Type", "application/x-protobuf")
                 .post(requestBytes.toRequestBody("application/x-protobuf".toMediaType()))
@@ -173,7 +207,7 @@ class SpotifyApi {
             clientTokenManager.ensureValid()
         }.getOrElse {
             val id = userId
-            if (id != null && it is TokenManagerWeb.Error) throw ClientException.Unauthorized(id)
+            if (id != null && it is TokenManagerDesktop.Error) throw ClientException.Unauthorized(id)
             throw it
         }
         val response = call(request).body.string()
@@ -188,7 +222,7 @@ class SpotifyApi {
             clientTokenManager.ensureValid()
         }.getOrElse {
             val id = userId
-            if (id != null && it is TokenManagerWeb.Error) throw ClientException.Unauthorized(id)
+            if (id != null && it is TokenManagerDesktop.Error) throw ClientException.Unauthorized(id)
             throw it
         }
         val response = call(request)
@@ -232,6 +266,14 @@ class SpotifyApi {
     }
 
     companion object {
+        private const val DEVICE_ID_KEY = "5911f7cd0d3cb8e1fdf731f0c57303cd353c96d8"
+
+        private fun generateDeviceId(): String {
+            val bytes = ByteArray(16)
+            SecureRandom().nextBytes(bytes)
+            return bytes.joinToString("") { "%02x".format(it) }
+        }
+
         fun urlEncode(data: String): String = URLEncoder.encode(data, "UTF-8")
     }
 }

@@ -14,9 +14,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import kotlin.io.encoding.ExperimentalEncodingApi
 
-// Was to lazy, so Claude made it. Judge me if you will - Yours Luft
-
-class TokenManagerWeb(
+class TokenManagerDesktop(
     private val api: SpotifyApi,
 ) {
     private val json = api.json
@@ -25,8 +23,6 @@ class TokenManagerWeb(
             val req = it.request().newBuilder()
             val cookie = api.cookie
             if (cookie != null) req.addHeader("Cookie", cookie)
-            req.addHeader("User-Agent", WebPlayerConfig.USER_AGENT)
-            req.addHeader("Referer", WebPlayerConfig.REFERER)
             it.proceed(req.build())
         }.build()
 
@@ -38,6 +34,8 @@ class TokenManagerWeb(
     private suspend fun createAnonymousAccessToken(): String {
         val request = Request.Builder()
             .url(getAnonymousTokenUrl())
+            .header("User-Agent", WebPlayerConfig.USER_AGENT)
+            .header("Referer", WebPlayerConfig.REFERER)
             .build()
         client.newCall(request).await().use { response ->
             val body = response.body.string()
@@ -50,7 +48,7 @@ class TokenManagerWeb(
             accessToken = token.accessToken
             clientId = token.clientId
             tokenExpiration = token.accessTokenExpirationTimestampMs - 5 * 60 * 1000
-            fetchAppVersion()
+            fetchWebAppVersion()
             return accessToken!!
         }
     }
@@ -72,6 +70,7 @@ class TokenManagerWeb(
         val string = client.newCall(
             Request.Builder()
                 .url(secretsUrl)
+                .header("User-Agent", WebPlayerConfig.USER_AGENT)
                 .build()
         ).await().body.string()
         val (secret, version) = json.decode<Secret>(string)
@@ -82,7 +81,6 @@ class TokenManagerWeb(
         private const val DEVICE_AUTH_URL = "https://accounts.spotify.com/oauth2/device/authorize"
         private const val DEVICE_TOKEN_URL = "https://accounts.spotify.com/api/token"
         private const val DEVICE_RESOLVE_URL = "https://accounts.spotify.com/pair/api/resolve"
-        private const val DEVICE_CLIENT_ID = "65b708073fc0480ea92a077233ca87bd"
         private const val DEVICE_SCOPE =
             "app-remote-control,playlist-modify,playlist-modify-private,playlist-modify-public," +
                     "playlist-read,playlist-read-collaborative,playlist-read-private,streaming," +
@@ -93,10 +91,7 @@ class TokenManagerWeb(
                     "user-read-playback-position,user-read-playback-state,user-read-private," +
                     "user-read-recently-played,user-top-read"
         private const val DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
-        private const val DEVICE_FLOW_USER_AGENT = "Spotify/126600447 Win32_x86_64/0 (PC laptop)"
 
-        private const val DESKTOP_FLOW_USER_AGENT_HEADER =
-            "Spotify/126600447 Win32_x86_64/0 (PC laptop)"
         private val JSON_MEDIA_TYPE = "application/json".toMediaType()
 
         private val NEXT_DATA_REGEX = Regex(
@@ -108,10 +103,11 @@ class TokenManagerWeb(
     }
 
     suspend fun createDesktopAccessToken(spDc: String): String {
+        DesktopConfig.maybeRefresh(client)
         val aT = createDesktopAccessTokenData(spDc)
         accessToken = aT.accessToken
+        clientId = DesktopConfig.CLIENT_ID
         tokenExpiration = System.currentTimeMillis() + aT.expiresIn.toLong() * 1000
-        fetchAppVersion()
         return accessToken!!
     }
 
@@ -137,10 +133,10 @@ class TokenManagerWeb(
     private suspend fun initiateDesktopDeviceAuthorization(): DesktopDeviceAuthorization {
         val request = Request.Builder()
             .url(DEVICE_AUTH_URL)
-            .addHeader("User-Agent", DEVICE_FLOW_USER_AGENT)
+            .addHeader("User-Agent", DesktopConfig.userAgent)
             .post(
                 FormBody.Builder()
-                    .add("client_id", DEVICE_CLIENT_ID)
+                    .add("client_id", DesktopConfig.CLIENT_ID)
                     .add("scope", DEVICE_SCOPE)
                     .build()
             )
@@ -164,7 +160,7 @@ class TokenManagerWeb(
     ): DesktopVerificationContext {
         val request = Request.Builder()
             .url(verificationUrl)
-            .addHeader("User-Agent", DEVICE_FLOW_USER_AGENT)
+            .addHeader("User-Agent", DesktopConfig.userAgent)
             .get()
             .build()
 
@@ -195,7 +191,7 @@ class TokenManagerWeb(
 
         val request = Request.Builder()
             .url(resolveUrl)
-            .addHeader("User-Agent", DEVICE_FLOW_USER_AGENT)
+            .addHeader("User-Agent", DesktopConfig.userAgent)
             .addHeader("x-csrf-token", csrfToken)
             .addHeader("referer", refererUrl)
             .addHeader("origin", "https://accounts.spotify.com")
@@ -217,10 +213,10 @@ class TokenManagerWeb(
     private suspend fun exchangeDesktopDeviceCode(deviceCode: String): DesktopAccessToken {
         val request = Request.Builder()
             .url(DEVICE_TOKEN_URL)
-            .addHeader("User-Agent", DEVICE_FLOW_USER_AGENT)
+            .addHeader("User-Agent", DesktopConfig.userAgent)
             .post(
                 FormBody.Builder()
-                    .add("client_id", DEVICE_CLIENT_ID)
+                    .add("client_id", DesktopConfig.CLIENT_ID)
                     .add("device_code", deviceCode)
                     .add("grant_type", DEVICE_GRANT_TYPE)
                     .build()
@@ -271,13 +267,13 @@ class TokenManagerWeb(
                 )
 
                 val request = original.newBuilder()
-                    .header("User-Agent", DESKTOP_FLOW_USER_AGENT_HEADER)
+                    .header("User-Agent", DesktopConfig.userAgent)
                     .apply {
                         if (cookieHeader.isNotBlank()) {
                             header("Cookie", cookieHeader)
                         }
                         if (original.header("Referer").isNullOrBlank()) {
-                            header("Referer", "https://open.spotify.com/")
+                            header("Referer", "https://accounts.spotify.com/")
                         }
                     }
                     .build()
@@ -447,10 +443,11 @@ class TokenManagerWeb(
         }
         else accessToken!!
 
-    private suspend fun fetchAppVersion() {
+    private suspend fun fetchWebAppVersion() {
         runCatching {
             val request = Request.Builder()
                 .url("https://open.spotify.com")
+                .header("User-Agent", WebPlayerConfig.USER_AGENT)
                 .build()
             client.newCall(request).await().use { response ->
                 if (!response.isSuccessful) return

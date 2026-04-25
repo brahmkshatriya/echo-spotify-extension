@@ -100,6 +100,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     lateinit var setting: Settings
     override fun setSettings(settings: Settings) {
         setting = settings
+        api.settings = settings
     }
 
     open val filesDir = File("spotify")
@@ -119,6 +120,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         override suspend fun onStop(url: NetworkRequest, cookie: String): List<User> {
             if (!cookie.contains("sp_dc")) throw Exception("Token not found")
             val api = SpotifyApi()
+            api.settings = setting
             api.setCookie(cookie)
             val email = emailRegex.find(cookie)?.groups?.get(1)?.value?.let {
                 URLDecoder.decode(it, "UTF-8")
