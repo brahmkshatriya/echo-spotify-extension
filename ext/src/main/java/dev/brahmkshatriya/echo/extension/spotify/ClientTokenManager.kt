@@ -11,7 +11,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okio.ByteString.Companion.toByteString
 
 class ClientTokenManager(
     private val api: SpotifyApi,
@@ -33,41 +32,87 @@ class ClientTokenManager(
     }
 
     private suspend fun fetchClientToken() {
-        val clientId = api.web.clientId ?: WEB_PLAYER_CLIENT_ID
+        val desktop = api.isDesktopPersona
+        val deviceId = api.deviceId()
+
+        if (desktop) {
+            val attempted = postClientToken(
+                clientId = DesktopConfig.CLIENT_ID,
+                clientVersion = DesktopConfig.appVersion,
+                sdkData = JsSdkData.desktop(deviceId),
+                useDesktopHeaders = true,
+            )
+            if (attempted) return
+            postClientToken(
+                clientId = WebPlayerConfig.CLIENT_ID,
+                clientVersion = WebPlayerConfig.appVersion,
+                sdkData = JsSdkData.web(deviceId),
+                useDesktopHeaders = false,
+                throwOnFailure = true,
+            )
+        } else {
+            postClientToken(
+                clientId = api.web.clientId ?: WebPlayerConfig.CLIENT_ID,
+                clientVersion = WebPlayerConfig.appVersion,
+                sdkData = JsSdkData.web(deviceId),
+                useDesktopHeaders = false,
+                throwOnFailure = true,
+            )
+        }
+    }
+
+    private suspend fun postClientToken(
+        clientId: String,
+        clientVersion: String,
+        sdkData: JsSdkData,
+        useDesktopHeaders: Boolean,
+        throwOnFailure: Boolean = false,
+    ): Boolean {
         val body = json.encode(
             ClientTokenRequest(
                 clientData = ClientData(
-                    clientVersion = WebPlayerConfig.appVersion,
+                    clientVersion = clientVersion,
                     clientId = clientId,
-                    jsSdkData = JsSdkData()
+                    jsSdkData = sdkData,
                 )
             )
         )
 
         val request = Request.Builder()
             .url(CLIENT_TOKEN_URL)
-            .header("User-Agent", WebPlayerConfig.USER_AGENT)
+            .apply {
+                if (useDesktopHeaders) {
+                    header("User-Agent", DesktopConfig.userAgent)
+                    header("Accept-Language", DesktopConfig.ACCEPT_LANGUAGE)
+                } else {
+                    header("User-Agent", WebPlayerConfig.USER_AGENT)
+                    header("Accept-Language", WebPlayerConfig.ACCEPT_LANGUAGE)
+                    header("Origin", WebPlayerConfig.ORIGIN)
+                    header("Referer", WebPlayerConfig.REFERER)
+                    header("Sec-Fetch-Dest", "empty")
+                    header("Sec-Fetch-Mode", "cors")
+                    header("Sec-Fetch-Site", "same-site")
+                }
+            }
             .header("Accept", "application/json")
-            .header("Accept-Language", WebPlayerConfig.ACCEPT_LANGUAGE)
             .header("content-type", "application/json")
-            .header("Origin", WebPlayerConfig.ORIGIN)
-            .header("Referer", WebPlayerConfig.REFERER)
-            .header("Sec-Fetch-Dest", "empty")
-            .header("Sec-Fetch-Mode", "cors")
-            .header("Sec-Fetch-Site", "same-site")
             .header("Connection", "keep-alive")
             .post(body.toByteArray().toRequestBody("application/json".toMediaType()))
             .build()
 
         client.newCall(request).await().use { response ->
             if (!response.isSuccessful) {
-                throw Exception("Client token request failed: ${response.code}")
+                if (throwOnFailure) {
+                    throw Exception("Client token request failed: ${response.code}")
+                }
+                return false
             }
             val responseBody = response.body.string()
             val tokenResponse = json.decode<ClientTokenResponse>(responseBody)
             clientToken = tokenResponse.grantedToken.token
             tokenExpiration = System.currentTimeMillis() +
                     tokenResponse.grantedToken.expiresAfterSeconds * 1000L
+            return true
         }
     }
 
@@ -79,14 +124,6 @@ class ClientTokenManager(
     companion object {
         private const val CLIENT_TOKEN_URL =
             "https://clienttoken.spotify.com/v1/clienttoken"
-        private const val WEB_PLAYER_CLIENT_ID =
-            "d8a5ed958d274c2e8ee717e6a4b0971d"
-
-        private fun generateDeviceId(): String {
-            val bytes = ByteArray(16)
-            java.security.SecureRandom().nextBytes(bytes)
-            return bytes.joinToString("") { "%02x".format(it) }
-        }
     }
 
     @Serializable
@@ -104,13 +141,33 @@ class ClientTokenManager(
     @OptIn(ExperimentalSerializationApi::class)
     @Serializable
     private data class JsSdkData(
-        @EncodeDefault @SerialName("device_brand") val deviceBrand: String = "unknown",
-        @EncodeDefault @SerialName("device_id") val deviceId: String = generateDeviceId(),
-        @EncodeDefault @SerialName("device_model") val deviceModel: String = "unknown",
-        @EncodeDefault @SerialName("device_type") val deviceType: String = "computer",
-        @EncodeDefault val os: String = "windows",
-        @EncodeDefault @SerialName("os_version") val osVersion: String = "NT 10.0",
-    )
+        @EncodeDefault @SerialName("device_brand") val deviceBrand: String,
+        @EncodeDefault @SerialName("device_id") val deviceId: String,
+        @EncodeDefault @SerialName("device_model") val deviceModel: String,
+        @EncodeDefault @SerialName("device_type") val deviceType: String,
+        @EncodeDefault val os: String,
+        @EncodeDefault @SerialName("os_version") val osVersion: String,
+    ) {
+        companion object {
+            fun desktop(deviceId: String) = JsSdkData(
+                deviceBrand = DesktopConfig.DEVICE_BRAND,
+                deviceId = deviceId,
+                deviceModel = DesktopConfig.DEVICE_MODEL,
+                deviceType = DesktopConfig.DEVICE_TYPE,
+                os = DesktopConfig.OS,
+                osVersion = DesktopConfig.OS_VERSION,
+            )
+
+            fun web(deviceId: String) = JsSdkData(
+                deviceBrand = "unknown",
+                deviceId = deviceId,
+                deviceModel = "unknown",
+                deviceType = "computer",
+                os = "windows",
+                osVersion = "NT 10.0",
+            )
+        }
+    }
 
     @Serializable
     private data class ClientTokenResponse(
