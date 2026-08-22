@@ -1,7 +1,6 @@
 package dev.brahmkshatriya.echo.extension.spotify
 
 import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
-import dev.brahmkshatriya.echo.extension.spotify.TOTP.convertToHex
 import kotlinx.serialization.Serializable
 import okhttp3.Cookie
 import okhttp3.FormBody
@@ -12,7 +11,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 class TokenManagerDesktop(
     private val api: SpotifyApi,
@@ -33,48 +31,34 @@ class TokenManagerDesktop(
 
     private suspend fun createAnonymousAccessToken(): String {
         val request = Request.Builder()
-            .url(getAnonymousTokenUrl())
+            .url("https://open.spotify.com/get_access_token?reason=transport&productType=web_player")
             .header("User-Agent", WebPlayerConfig.USER_AGENT)
             .header("Referer", WebPlayerConfig.REFERER)
+            .header("App-Platform", "WebPlayer")
+            .header("Accept", "application/json")
             .build()
+
         client.newCall(request).await().use { response ->
             val body = response.body.string()
-            val token = runCatching { json.decode<TokenResponse>(body) }.getOrElse {
+            val token = runCatching { json.decode<WebAccessTokenResponse>(body) }.getOrElse {
                 throw runCatching { json.decode<ErrorMessage>(body).error }.getOrElse {
                     Exception(body.ifEmpty { "Token Code ${response.code}" })
                 }
             }
 
             accessToken = token.accessToken
-            clientId = token.clientId
-            tokenExpiration = token.accessTokenExpirationTimestampMs - 5 * 60 * 1000
+            clientId = token.clientId.ifEmpty { DesktopConfig.CLIENT_ID }
+            
+            val expiryMs = if (token.accessTokenExpirationTimestampMs > 0) {
+                token.accessTokenExpirationTimestampMs
+            } else {
+                System.currentTimeMillis() + (3600 * 1000)
+            }
+            
+            tokenExpiration = expiryMs - 5 * 60 * 1000
             fetchWebAppVersion()
             return accessToken!!
         }
-    }
-
-    @OptIn(ExperimentalStdlibApi::class)
-    private suspend fun getAnonymousTokenUrl(): String {
-        val (secret, version) = getDataFromSite()
-        val time = System.currentTimeMillis()
-        val totp = TOTP.generateTOTP(secret, (time / 30000).toHexString().uppercase())
-        return "https://open.spotify.com/api/token" +
-                "?reason=init&productType=web-player&totp=$totp&totpServer=$totp&totpVer=$version"
-    }
-
-    private val secretsUrl =
-        "https://raw.githubusercontent.com/itsmechinmoy/echo-extensions/refs/heads/main/noidea.txt"
-
-    @OptIn(ExperimentalEncodingApi::class)
-    private suspend fun getDataFromSite(): Secret {
-        val string = client.newCall(
-            Request.Builder()
-                .url(secretsUrl)
-                .header("User-Agent", WebPlayerConfig.USER_AGENT)
-                .build()
-        ).await().body.string()
-        val (secret, version) = json.decode<Secret>(string)
-        return Secret(convertToHex(secret), version)
     }
 
     companion object {
@@ -366,17 +350,11 @@ class TokenManagerDesktop(
     )
 
     @Serializable
-    data class Secret(
-        val secret: String,
-        val version: Int,
-    )
-
-    @Serializable
-    data class TokenResponse(
-        val isAnonymous: Boolean,
-        val accessTokenExpirationTimestampMs: Long,
-        val clientId: String,
+    data class WebAccessTokenResponse(
+        val clientId: String = "",
         val accessToken: String,
+        val accessTokenExpirationTimestampMs: Long = 0,
+        val isAnonymous: Boolean = true,
     )
 
     @Serializable
