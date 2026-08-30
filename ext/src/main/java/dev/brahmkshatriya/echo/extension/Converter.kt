@@ -564,6 +564,7 @@ fun Item.toMediaItem(cropCovers: Boolean): EchoMediaItem? {
         is Item.BrowseSpacesHub -> null
         is Item.GenericError -> null
         is Item.DiscoveryFeed -> null
+        is Item.Unknown -> null
     }
 }
 

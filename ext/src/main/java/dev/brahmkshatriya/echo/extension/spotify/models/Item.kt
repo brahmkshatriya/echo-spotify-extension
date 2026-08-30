@@ -317,6 +317,13 @@ sealed interface Item {
     ) : Item
 
     @Serializable
+    @SerialName("Unknown")
+    data class Unknown(
+        @SerialName("__typename")
+        override val typename: String = "Unknown",
+    ) : Item
+
+    @Serializable
     data class Wrapper(
         @SerialName("__typename")
         val typename: String? = null,
