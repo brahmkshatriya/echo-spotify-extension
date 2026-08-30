@@ -132,6 +132,8 @@ fun Sections.toShelves(
             Sections.Typename.HomeRecentlyPlayedSectionData -> null
             Sections.Typename.HomeNativeAdsSectionData -> null
             Sections.Typename.HomeYourDJSectionData -> null
+            Sections.Typename.HomePromotionSectionData -> null
+            Sections.Typename.Unknown -> null
         }
     }!!
 }
