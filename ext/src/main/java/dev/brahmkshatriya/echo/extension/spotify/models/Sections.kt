@@ -1,7 +1,13 @@
 package dev.brahmkshatriya.echo.extension.spotify.models
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 
 @Serializable
 data class Sections(
@@ -36,7 +42,7 @@ data class Sections(
         val title: Title? = null
     )
 
-    @Serializable
+    @Serializable(with = TypenameSerializer::class)
     enum class Typename {
         HomeShortsSectionData,
         HomeGenericSectionData,
@@ -50,7 +56,23 @@ data class Sections(
         BrowseUnsupportedSectionData,
         BrowseRelatedSectionData,
         HomeNativeAdsSectionData,
-        HomeYourDJSectionData;
+        HomeYourDJSectionData,
+        HomePromotionSectionData,
+        Unknown;
+    }
+
+    object TypenameSerializer : KSerializer<Typename> {
+        override val descriptor: SerialDescriptor =
+            PrimitiveSerialDescriptor("Typename", PrimitiveKind.STRING)
+
+        override fun deserialize(decoder: Decoder): Typename {
+            val name = decoder.decodeString()
+            return Typename.entries.firstOrNull { it.name == name } ?: Typename.Unknown
+        }
+
+        override fun serialize(encoder: Encoder, value: Typename) {
+            encoder.encodeString(value.name)
+        }
     }
 
     @Serializable
