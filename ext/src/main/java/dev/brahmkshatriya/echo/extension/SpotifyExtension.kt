@@ -43,6 +43,7 @@ import dev.brahmkshatriya.echo.common.models.User
 import dev.brahmkshatriya.echo.common.settings.SettingSwitch
 import dev.brahmkshatriya.echo.common.settings.Settings
 import dev.brahmkshatriya.echo.extension.spotify.AudioFormat
+import dev.brahmkshatriya.echo.extension.spotify.Base62
 import dev.brahmkshatriya.echo.extension.spotify.AudioFormat.FLAC_FLAC
 import dev.brahmkshatriya.echo.extension.spotify.AudioFormat.FLAC_FLAC_24BIT
 import dev.brahmkshatriya.echo.extension.spotify.AudioFormat.OGG_VORBIS_160
@@ -265,7 +266,32 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
                             ?: throw IllegalStateException("No CDN URL for podcast episode")
                         Streamable.Source.Http(url.toGetRequest()).toMedia()
                     }
-                    OGG_VORBIS_320, OGG_VORBIS_160, OGG_VORBIS_96, FLAC_FLAC, FLAC_FLAC_24BIT -> oggStream(format.toString(), streamable)
+                    OGG_VORBIS_320, OGG_VORBIS_160, OGG_VORBIS_96 ->
+                        oggStream(format.toString(), streamable)
+                    FLAC_FLAC, FLAC_FLAC_24BIT -> try {
+                        oggStream(format.toString(), streamable)
+                    } catch (failure: IllegalStateException) {
+                        val fallback = (AudioStreamFallback.onLicenseRejection(streamable, failure)
+                            ?: if (AudioStreamFallback.isLicenseRejection(failure)) {
+                                try {
+                                    resolveLegacyFlacFallback(streamable)
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    failure.addSuppressed(e)
+                                    null
+                                }
+                            } else null)
+                            ?: throw failure
+                        try {
+                            oggStream(fallback.extras.getValue("formatNum"), fallback)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (fallbackError: Exception) {
+                            failure.addSuppressed(fallbackError)
+                            throw failure
+                        }
+                    }
                     //MP4_256, MP4_128 -> widevineStream(streamable)
                     else -> throw ClientException.NotSupported(AudioFormat.name(format))
                 }
@@ -279,6 +305,19 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }
 
     open val showWidevineStreams = false
+
+    /** Queued tracks from older extension versions have no fallback file metadata. */
+    private suspend fun resolveLegacyFlacFallback(streamable: Streamable): Streamable? {
+        val gid = streamable.extras["gid"]
+            ?.takeIf { it.matches(Regex("[a-fA-F0-9]{32}")) } ?: return null
+        val id = "spotify:track:${Base62.encode(gid)}"
+        val track = loadTrack(Track(id = id, title = ""), false)
+        return track.streamables.filter {
+            it.extras["formatNum"]?.toIntOrNull() in listOf(
+                OGG_VORBIS_320, OGG_VORBIS_160, OGG_VORBIS_96,
+            )
+        }.maxByOrNull { it.quality }
+    }
 
     override suspend fun loadTrack(track: Track, isDownload: Boolean): Track = coroutineScope {
         if (track.type == Track.Type.Podcast || track.id.startsWith("spotify:episode:")) {
@@ -574,9 +613,6 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
                 "All", null -> pagedLibrary(queries, cropCovers = cropCovers)
                 "You" -> PagedData.Single {
                     val top = queries.userTopContent().json.data.me.profile
-
-                    val id = getCurrentUser()!!.id.substringAfter("spotify:user:")
-                    val uris = queries.recentlyPlayed(id).json.playContexts.map { it.uri }
                     listOfNotNull(
                         Shelf.Lists.Items(
                             "top_artists",
@@ -589,11 +625,22 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
                             "top_tracks",
                             "Top Tracks",
                             top.topTracks?.items.orEmpty().mapNotNull {
-                                (it.data as Item.Track).toTrack(cropCovers)
+                                (it.data as? Item.Track)?.toTrack(cropCovers)
                             }
                         )
-                    ) + queries.fetchEntitiesForRecentlyPlayed(uris).json.data.lookup.mapNotNull {
-                        it.data?.toMediaItem(cropCovers)?.toShelf()
+                    ) + try {
+                        // A missing history endpoint or insufficient OAuth scope
+                        // must not prevent the user's top artists/tracks loading.
+                        val uris = queries.recentlyPlayed().json.contentUris()
+                        if (uris.isEmpty()) emptyList() else {
+                            queries.fetchEntitiesForRecentlyPlayed(uris).json.data.lookup.mapNotNull {
+                                it.data?.toMediaItem(cropCovers)?.toShelf()
+                            }
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        emptyList()
                     }
                 }
 

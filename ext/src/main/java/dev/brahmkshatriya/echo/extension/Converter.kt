@@ -805,6 +805,12 @@ fun BatchedExtensionResponse.toTrack(
         else -> alternativeFiles
     }
 
+    // A FLAC license can be refused even on Premium accounts. Retain the
+    // best available Vorbis file so FLAC failures do not terminate playback.
+    val vorbisFallback = AudioStreamFallback.bestVorbisFile(
+        files.filter { it.format.show(hasPremium, supportsPlayPlay, showWidevineStreams) }
+    )
+
     val streamables = mutableListOf<Streamable>()
     files.forEach { file ->
         file.takeIf { it.hasFileId() && it.format.show(hasPremium, supportsPlayPlay, showWidevineStreams) }
@@ -817,12 +823,12 @@ fun BatchedExtensionResponse.toTrack(
                         id = fileIdHex,
                         quality = AudioFormat.quality(formatNum),
                         title = formatName.replace("_", " "),
-                        extras = mapOf(
+                        extras = AudioStreamFallback.attachFallback(mapOf(
                             "fileId" to fileIdHex,
                             "formatNum" to formatNum.toString(),
                             "formatName" to formatName,
                             "gid" to (gid?.toHex() ?: ""),
-                        )
+                        ), vorbisFallback.takeIf { AudioStreamFallback.isFlac(formatNum) })
                     )
                 )
             }

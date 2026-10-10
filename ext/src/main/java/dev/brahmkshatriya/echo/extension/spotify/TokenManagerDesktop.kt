@@ -22,7 +22,11 @@ class TokenManagerDesktop(
         .addInterceptor {
             val req = it.request().newBuilder()
             val cookie = api.cookie
-            if (cookie != null) req.addHeader("Cookie", cookie)
+            val host = it.request().url.host
+            // The Spotify cookie must never leave spotify.com (e.g. while
+            // reading third-party app-version or TOTP configuration URLs).
+            if (cookie != null && (host == "spotify.com" || host.endsWith(".spotify.com")))
+                req.addHeader("Cookie", cookie)
             it.proceed(req.build())
         }.build()
 
@@ -112,8 +116,10 @@ class TokenManagerDesktop(
     }
 
     suspend fun createDesktopAccessTokenData(spDc: String): DesktopAccessToken {
-        val authorization = initiateDesktopDeviceAuthorization()
+        // Authorization itself sets device/session cookies. Use one cookie-aware
+        // client for all steps; otherwise /pair/api/resolve can return 401.
         val flowClient = newDesktopDeviceFlowClient(spDc)
+        val authorization = initiateDesktopDeviceAuthorization(flowClient)
         val verification = parseDesktopVerificationPage(
             flowClient = flowClient,
             verificationUrl = authorization.verificationUriComplete,
@@ -124,13 +130,15 @@ class TokenManagerDesktop(
             userCode = authorization.userCode,
             flowContext = verification.flowContext,
             csrfToken = verification.csrfToken,
-            refererUrl = authorization.verificationUriComplete,
+            refererUrl = verification.refererUrl,
         )
 
         return exchangeDesktopDeviceCode(authorization.deviceCode)
     }
 
-    private suspend fun initiateDesktopDeviceAuthorization(): DesktopDeviceAuthorization {
+    private suspend fun initiateDesktopDeviceAuthorization(
+        flowClient: OkHttpClient,
+    ): DesktopDeviceAuthorization {
         val request = Request.Builder()
             .url(DEVICE_AUTH_URL)
             .addHeader("User-Agent", DesktopConfig.userAgent)
@@ -142,7 +150,7 @@ class TokenManagerDesktop(
             )
             .build()
 
-        client.newCall(request).await().use { response ->
+        flowClient.newCall(request).await().use { response ->
             val body = response.readRequiredBody("Desktop device authorization")
             val payload = json.decode<DesktopDeviceAuthorizationResponse>(body)
 
@@ -174,6 +182,9 @@ class TokenManagerDesktop(
             return DesktopVerificationContext(
                 flowContext = flowContext,
                 csrfToken = extractDesktopCsrfToken(html),
+                // /pair redirects to /en/link/v2. CSRF validation expects the
+                // actual page URL, not the pre-redirect verification URL.
+                refererUrl = response.request.url.toString(),
             )
         }
     }
@@ -202,6 +213,12 @@ class TokenManagerDesktop(
             .build()
 
         flowClient.newCall(request).await().use { response ->
+            if (response.code == 401) {
+                throw IllegalStateException(
+                    "Spotify rejected the saved login session (HTTP 401). " +
+                        "Log out of Spotify in Echo and sign back in to refresh the session cookie."
+                )
+            }
             val body = response.readRequiredBody("Desktop user code submission")
             val payload = json.decode<DesktopResolveResponse>(body)
             if (payload.result != "ok") {
@@ -315,6 +332,7 @@ class TokenManagerDesktop(
     private data class DesktopVerificationContext(
         val flowContext: String,
         val csrfToken: String,
+        val refererUrl: String,
     )
 
     @Serializable

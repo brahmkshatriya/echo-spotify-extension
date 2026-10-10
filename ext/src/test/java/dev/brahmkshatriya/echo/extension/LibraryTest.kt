@@ -30,7 +30,7 @@ class LibraryTest {
     private val extension = SpotifyExtension()
 
     private val mainThreadSurrogate = newSingleThreadContext("UI thread")
-    private val cookie = "sp_dc=AQC_FiY1aAHuQqqkrKdGazCYylEk2CXB0UkRRs7ygp86ihIXmFhhUvC3GyfOQAYxHy0oeFVJ5lZ9RFR7_lLujo-lwXWJi7ooWqoo_7PJn11knjFUecuOv34uQ14__IpWcEFYMMxYxYw1lwD2ebFyJwfby1jO2hSFiGRabDGWyWgtjdbPg5OdzgaHQemAtHoTrhib5tyEZMf3BHXbELs"
+    private val cookie = "" //it was a fake account anyways 😤
     private val user = User(
         "", "",
         extras = mapOf("cookie" to cookie, "stored_token" to "{\"username\":\"\",\"token\":\"\"}")

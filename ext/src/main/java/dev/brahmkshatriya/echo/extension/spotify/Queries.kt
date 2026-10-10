@@ -527,8 +527,10 @@ class Queries(
         }
     )
 
-    suspend fun recentlyPlayed(userId: String) = api.clientQuery<RecentlyPlayed>(
-        "recently-played/v3/user/$userId/recently-played?format=json&offset=0&limit=50&filter=default%2Ccollection-new-episodes"
+    // The old spclient recently-played/v3/user/{id} endpoint now returns 404.
+    // Spotify's supported history endpoint uses /me and returns played items.
+    suspend fun recentlyPlayed() = api.webApiQuery<RecentlyPlayed>(
+        "me/player/recently-played?limit=50"
     )
 
     suspend fun fetchEntitiesForRecentlyPlayed(uris: List<String>) =

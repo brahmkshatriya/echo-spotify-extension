@@ -148,6 +148,15 @@ class SpotifyApi {
         return Response(json.decode<T>(raw), raw)
     }
 
+    suspend inline fun <reified T> webApiQuery(path: String): Response<T> {
+        val raw = callGetBody(
+            Request.Builder()
+                .url("https://api.spotify.com/v1/$path")
+                .build()
+        )
+        return Response(json.decode<T>(raw), raw)
+    }
+
     suspend inline fun <reified T> clientMutate(path: String, data: JsonObject): Response<T> {
         val raw = callGetBody(
             Request.Builder()
