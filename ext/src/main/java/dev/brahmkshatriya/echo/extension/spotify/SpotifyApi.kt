@@ -184,14 +184,15 @@ class SpotifyApi {
     }
 
 
-    suspend inline fun clientMutateProto(path: String, mediaId: String): BatchedExtensionResponse {
-        val requestBytes = buildExtendedMetadataRequest(entityUris = listOf(mediaId), extensionKinds = listOf(
-            ExtendedMetadataProto.ExtensionKind.TRACK_V4,
-            ExtendedMetadataProto.ExtensionKind.AUDIO_FILES
-        ))
+    suspend fun extendedMetadata(
+        entityUris: List<String>,
+        extensionKinds: List<ExtendedMetadataProto.ExtensionKind>
+    ): BatchedExtensionResponse {
+        require(entityUris.isNotEmpty()) { "No Spotify entities requested" }
+        val requestBytes = buildExtendedMetadataRequest(entityUris, extensionKinds)
         val raw = callGetBodyBytes(
             Request.Builder()
-                .url("https://spclient.wg.spotify.com/$path")
+                .url("https://spclient.wg.spotify.com/extended-metadata/v0/extended-metadata")
                 .header("Accept", "application/x-protobuf")
                 .header("Content-Type", "application/x-protobuf")
                 .post(requestBytes.toRequestBody("application/x-protobuf".toMediaType()))
@@ -200,6 +201,15 @@ class SpotifyApi {
 
         return BatchedExtensionResponse.parseFrom(raw)
     }
+
+    suspend fun clientMutateProto(path: String, mediaId: String): BatchedExtensionResponse =
+        extendedMetadata(
+            entityUris = listOf(mediaId),
+            extensionKinds = listOf(
+                ExtendedMetadataProto.ExtensionKind.TRACK_V4,
+                ExtendedMetadataProto.ExtensionKind.AUDIO_FILES,
+            ),
+        )
 
     suspend fun callGetBody(request: Request): String {
         runCatching {

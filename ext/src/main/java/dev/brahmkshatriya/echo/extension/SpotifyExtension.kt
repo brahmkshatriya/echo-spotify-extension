@@ -57,14 +57,26 @@ import dev.brahmkshatriya.echo.extension.spotify.models.ArtistOverview
 import dev.brahmkshatriya.echo.extension.spotify.models.GetAlbum
 import dev.brahmkshatriya.echo.extension.spotify.models.Item
 import dev.brahmkshatriya.echo.extension.spotify.models.UserProfileView
+import dev.brahmkshatriya.echo.extension.PodcastSupport.episode
+import dev.brahmkshatriya.echo.extension.PodcastSupport.show
+import dev.brahmkshatriya.echo.extension.PodcastSupport.toTrack
+import dev.brahmkshatriya.echo.extension.PodcastSupport.toAlbum
+import dev.brahmkshatriya.echo.extension.PodcastSupport.toArtist
+import dev.brahmkshatriya.echo.extension.PodcastSupport.episodeUris
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import okhttp3.Request
+import okhttp3.OkHttpClient
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.EOFException
+import java.io.ByteArrayInputStream
+import java.io.IOException
 import java.io.File
 import java.io.InputStream
 import java.math.BigInteger
@@ -73,6 +85,7 @@ import javax.crypto.Cipher
 import javax.crypto.CipherInputStream
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import spotify.extendedmetadata.metadata.ExtendedMetadataProto.ExtensionKind
 
 open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     SearchFeedClient, HomeFeedClient, LibraryFeedClient, LyricsClient, ShareClient,
@@ -105,6 +118,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
     open val filesDir = File("spotify")
     val api by lazy { SpotifyApi() }
+    private val cdnClient by lazy { OkHttpClient() }
     val queries by lazy { Queries(api) }
 
     override val webViewRequest = object : WebViewRequest.Cookie<List<User>> {
@@ -204,6 +218,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }
 
     override suspend fun loadFeed(track: Track) = PagedData.Single {
+        if (track.type == Track.Type.Podcast) return@Single emptyList<Shelf>()
         val (union, rec) = coroutineScope {
             val a = async { queries.getTrack(track.id).json.data.trackUnion }
             val b = queries.internalLinkRecommenderTrack(track.id).json.data.seoRecommendedTrack
@@ -225,9 +240,31 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     ): Streamable.Media {
         return when (streamable.type) {
             Streamable.MediaType.Server -> {
+                if (streamable.extras["podcastExternal"] == "true") {
+                    val url = PodcastSupport.externalAudioUrl(streamable.id)
+                        ?: throw ClientException.NotSupported("Invalid external podcast URL")
+                    return Streamable.Source.Http(url.toGetRequest()).toMedia()
+                }
                 api.cookie ?: throw ClientException.LoginRequired()
                 val format = streamable.extras["formatNum"]!!.toInt()
                 when (format) {
+                    AudioFormat.MP3_96, AudioFormat.MP3_160,
+                    AudioFormat.MP3_256, AudioFormat.MP3_320 -> {
+                        if (streamable.extras["podcast"] != "true")
+                            throw ClientException.NotSupported("Non-podcast MP3 stream")
+                        val urls = queries.storageResolve(format.toString(), streamable.id)
+                            .json.cdnUrl
+                        val url = SpotifyCdn.firstWorking(urls) { candidate ->
+                            cdnClient.newCall(
+                                Request.Builder().url(candidate)
+                                    .header("Range", "bytes=0-15")
+                                    .header("Accept-Encoding", "identity")
+                                    .build()
+                            ).await().use { SpotifyCdn.acceptsRange(it.code, 0) }
+                        }
+                            ?: throw IllegalStateException("No CDN URL for podcast episode")
+                        Streamable.Source.Http(url.toGetRequest()).toMedia()
+                    }
                     OGG_VORBIS_320, OGG_VORBIS_160, OGG_VORBIS_96, FLAC_FLAC, FLAC_FLAC_24BIT -> oggStream(format.toString(), streamable)
                     //MP4_256, MP4_128 -> widevineStream(streamable)
                     else -> throw ClientException.NotSupported(AudioFormat.name(format))
@@ -244,6 +281,21 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     open val showWidevineStreams = false
 
     override suspend fun loadTrack(track: Track, isDownload: Boolean): Track = coroutineScope {
+        if (track.type == Track.Type.Podcast || track.id.startsWith("spotify:episode:")) {
+            val response = api.extendedMetadata(
+                listOf(track.id), listOf(ExtensionKind.EPISODE_V4, ExtensionKind.AUDIO_FILES)
+            )
+            val episode = with(PodcastSupport) { response.episode(track.id) }
+                ?: throw ClientException.NotSupported("Podcast episode metadata unavailable")
+            val audioFiles = with(PodcastSupport) {
+                response.bytes(ExtensionKind.AUDIO_FILES, track.id)
+            }?.let {
+                spotify.extendedmetadata.audiofiles.AudioFilesExtensionProto.AudioFilesExtensionResponse.parseFrom(it)
+            }
+            return@coroutineScope with(PodcastSupport) {
+                episode.toTrack(track.id, track, audioFiles)
+            }
+        }
         val hasPremium = hasPremium()
         val canvas =
             if (showCanvas) async { queries.canvas(track.id).json.toStreamable() } else null
@@ -389,7 +441,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         val uri = queries.createPlaylist(title, description).json.uri
         val userId = getCurrentUser()!!.id.substringAfter("spotify:user:")
         queries.playlistToLibrary(userId, uri)
-        return loadPlaylist(Playlist(uri, title, true))
+        return loadPlaylist(Playlist(uri, title, true, isRadioSupported = false))
     }
 
     private fun getPlaylistId(playlist: Playlist): String {
@@ -439,6 +491,12 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         }
 
     override suspend fun loadAlbum(album: Album): Album {
+        if (album.type == Album.Type.Show || album.id.startsWith("spotify:show:")) {
+            val response = api.extendedMetadata(listOf(album.id), listOf(ExtensionKind.SHOW_V4))
+            val show = with(PodcastSupport) { response.show(album.id) }
+                ?: throw ClientException.NotSupported("Podcast show metadata unavailable")
+            return with(PodcastSupport) { show.toAlbum(album.id, album) }
+        }
         val res = queries.getAlbum(album.id)
         return res.json.data.albumUnion.toAlbum(cropCovers)!!.copy(
             extras = mapOf("raw" to res.raw)
@@ -458,7 +516,20 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     }
 
     override suspend fun loadTracks(album: Album) = when (album.type) {
-        Album.Type.Show -> null
+        Album.Type.Show -> {
+            val uris = queries.showEpisodeUris(album.id)
+            paged<Track> { offset ->
+                val chunk = uris.drop(offset.toInt()).take(20)
+                val episodes = if (chunk.isEmpty()) emptyList() else {
+                    val batch = api.extendedMetadata(chunk, listOf(ExtensionKind.EPISODE_V4))
+                    with(PodcastSupport) {
+                        chunk.mapNotNull { uri -> batch.episode(uri)?.toTrack(uri) }
+                    }
+                }
+                val next = (offset + chunk.size).toLong().takeIf { it < uris.size.toLong() }
+                episodes to next
+            }.toFeed()
+        }
         Album.Type.Book -> null
         else -> {
             var next = 0L
@@ -561,7 +632,7 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
     override suspend fun followItem(item: EchoMediaItem, shouldFollow: Boolean) {
         if (api.cookie == null) throw ClientException.LoginRequired()
         when (val type = item.id.substringAfter(":").substringBefore(":")) {
-            "artist" -> {
+            "artist", "show" -> {
                 if (shouldFollow) queries.addToLibrary(item.id)
                 else queries.removeFromLibrary(item.id)
             }
@@ -576,11 +647,60 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         }
     }
 
+    private suspend fun loadPodcastEpisodes(
+        episodeUris: List<String>, showArtist: Artist,
+    ): List<Track> {
+        if (episodeUris.isEmpty()) return emptyList()
+        val batch = api.extendedMetadata(episodeUris, listOf(ExtensionKind.EPISODE_V4))
+        return with(PodcastSupport) {
+            episodeUris.mapNotNull { uri ->
+                batch.episode(uri)?.toTrack(
+                    uri, fallback = Track(id = uri, title = "", artists = listOf(showArtist))
+                )
+            }
+        }
+    }
+
     override suspend fun loadFeed(artist: Artist): Feed<Shelf> {
         return when (val type = artist.id.substringAfter(":").substringBefore(":")) {
             "artist" -> {
                 val res = api.json.decode<ArtistOverview>(artist.extras["raw"]!!)
                 res.data.artistUnion.toShelves(queries, cropCovers)
+            }
+
+            "show" -> coroutineScope {
+                // Keep recommendations independent from episode loading: a change
+                // to Spotify's public show page must not hide playable episodes.
+                val relatedDeferred = async {
+                    try {
+                        queries.relatedPodcastShows(artist.id)
+                            .mapNotNull { it.toArtist(cropCovers) }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                }
+                val uris = queries.showEpisodeUris(artist.id)
+                val first = loadPodcastEpisodes(uris.take(20), artist)
+                val related = relatedDeferred.await()
+                listOfNotNull(Shelf.Lists.Tracks(
+                    id = "${artist.id}_episodes",
+                    title = "Episodes",
+                    list = first,
+                    more = if (uris.size > 20) paged<Shelf> { offset ->
+                        val chunk = uris.drop(offset.toInt()).take(20)
+                        val tracks = loadPodcastEpisodes(chunk, artist)
+                        tracks.map { it.toShelf() } to
+                            (offset + chunk.size).toLong().takeIf { it < uris.size.toLong() }
+                    }.toFeed() else null,
+                ), related.takeIf { it.isNotEmpty() }?.let {
+                    Shelf.Lists.Items(
+                        id = "${artist.id}_similar_podcasts",
+                        title = "More podcasts like this",
+                        list = it,
+                    )
+                })
             }
 
             "user" -> {
@@ -599,6 +719,13 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
     override suspend fun loadArtist(artist: Artist): Artist {
         when (val type = artist.id.substringAfter(":").substringBefore(":")) {
+            "show" -> {
+                val response = api.extendedMetadata(listOf(artist.id), listOf(ExtensionKind.SHOW_V4))
+                val show = with(PodcastSupport) { response.show(artist.id) }
+                    ?: throw ClientException.NotSupported("Podcast show metadata unavailable")
+                return with(PodcastSupport) { show.toArtist(artist.id, artist) }
+            }
+
             "artist" -> {
                 val res = queries.queryArtistOverview(artist.id)
                 val artist = res.json.data.artistUnion.toArtist(null, cropCovers)
@@ -667,23 +794,60 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
         ).toMedia()
     }*/
 
-    open suspend fun getKey(json: Json, accessToken: String, fileId: String): ByteArray =
-        throw IllegalStateException()
+    open suspend fun getKey(json: Json, accessToken: String, fileId: String): ByteArray {
+        require(fileId.matches(Regex("[0-9a-fA-F]{40}"))) { "Invalid Spotify audio file ID" }
+        val request = Request.Builder()
+            .url("https://spclient.wg.spotify.com/playplay/v1/key/$fileId")
+            .header("Authorization", "Bearer $accessToken")
+            .header("Accept", "application/x-protobuf")
+            .post(PlayPlayLicenseRequest.encode().toRequestBody("application/x-protobuf".toMediaType()))
+            .build()
+        return api.client.newCall(request).await().use { response ->
+            if (!response.isSuccessful) {
+                throw IllegalStateException("Spotify PlayPlay request failed: HTTP ${response.code}")
+            }
+            val obfuscated = PlayPlayRecordDecoder.parseObfuscatedKey(response.body.bytes())
+            PlayPlayRecordDecoder.decodeObfuscatedKey(obfuscated)
+        }
+    }
 
     private suspend fun oggStream(format: String, streamable: Streamable): Streamable.Media {
         val fileId = streamable.id
-        val url = queries.storageResolve(format, fileId).json.cdnUrl.first()
+        val urls = queries.storageResolve(format, fileId).json.cdnUrl
+            .filter(SpotifyCdn::isSafeUrl).distinct()
+        if (urls.isEmpty()) throw IllegalStateException("No CDN URL for audio file")
         val accessToken = api.getWebAccessToken()
         val key = getKey(api.json, accessToken, fileId)
         return Streamable.InputProvider { position, length ->
-            decryptFromPosition(format, key, AUDIO_IV, position, length) { pos, len ->
-                val range = "bytes=$pos-${len?.toString() ?: ""}"
-                val request = Request.Builder().url(url)
-                    .header("Range", range)
-                    .build()
-                val resp = api.client.newCall(request).await()
-                val actualLength = resp.header("Content-Length")?.toLong() ?: -1L
-                resp.body.byteStream() to actualLength
+            if (length == 0L) ByteArrayInputStream(ByteArray(0)) to 0L
+            else decryptFromPosition(format, key, AUDIO_IV, position, length) { pos, end ->
+                val range = "bytes=$pos-${end?.toString().orEmpty()}"
+                var lastStatus = -1
+                var lastError: IOException? = null
+                for (url in urls) {
+                    val request = Request.Builder().url(url)
+                        .header("Range", range)
+                        .header("Accept-Encoding", "identity")
+                        .build()
+                    val response = try {
+                        cdnClient.newCall(request).await()
+                    } catch (e: IOException) {
+                        lastError = e
+                        continue
+                    }
+                    if (SpotifyCdn.acceptsRange(response.code, pos)) {
+                        val size = response.body.contentLength().takeIf { it >= 0L }
+                            ?: response.header("Content-Length")?.toLongOrNull() ?: -1L
+                        // Closing this stream closes the underlying response body.
+                        return@decryptFromPosition response.body.byteStream() to size
+                    }
+                    lastStatus = response.code
+                    response.close()
+                }
+                throw IOException(
+                    "All CDN locations failed for audio range (last HTTP status $lastStatus)",
+                    lastError,
+                )
             }
         }.toSource(fileId).toMedia()
     }
@@ -717,7 +881,8 @@ open class SpotifyExtension : ExtensionClient, LoginClient.WebView,
 
         val cipherStream = CipherInputStream(input, cipher)
         cipherStream.skipBytes(blockOffset)
-        return cipherStream to (contentLength - blockOffset)
+        return cipherStream to if (contentLength < 0L) -1L
+        else (contentLength - blockOffset).coerceAtLeast(0L)
     }
 
     companion object {

@@ -23,8 +23,10 @@ import dev.brahmkshatriya.echo.extension.spotify.models.Metadata4Track
 import dev.brahmkshatriya.echo.extension.spotify.models.PlaylistChanges
 import dev.brahmkshatriya.echo.extension.spotify.models.ProfileAttributes
 import dev.brahmkshatriya.echo.extension.spotify.models.RecentlyPlayed
+import dev.brahmkshatriya.echo.extension.spotify.models.RelatedPodcasts
 import dev.brahmkshatriya.echo.extension.spotify.models.SearchDesktop
 import dev.brahmkshatriya.echo.extension.spotify.models.SeedToPlaylist
+import dev.brahmkshatriya.echo.extension.spotify.models.ShowContext
 import dev.brahmkshatriya.echo.extension.spotify.models.SeoRecommendedPlaylist
 import dev.brahmkshatriya.echo.extension.spotify.models.StorageResolve
 import dev.brahmkshatriya.echo.extension.spotify.models.UserFollowers
@@ -37,11 +39,46 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import java.util.TimeZone
 
 class Queries(
     private val api: SpotifyApi,
 ) {
+
+    private val publicPageClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .build()
+
+    suspend fun relatedPodcastShows(uri: String): List<dev.brahmkshatriya.echo.extension.spotify.models.Item.Podcast> {
+        require(uri.matches(Regex("spotify:show:[0-9A-Za-z]{22}"))) { "Invalid Spotify show URI" }
+        val showId = uri.substringAfterLast(':')
+        val request = Request.Builder()
+            .url("https://open.spotify.com/show/$showId")
+            // Spotify's mobile page embeds related shows; the desktop page may not.
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36")
+            .header("Accept", "text/html")
+            .build()
+        return publicPageClient.newCall(request).await().use { response ->
+            if (!response.isSuccessful) return@use emptyList()
+            RelatedPodcasts.fromHtml(response.body.string(), uri)
+        }
+    }
+
+    suspend fun showEpisodeUris(uri: String): List<String> {
+        require(uri.matches(Regex("spotify:show:[0-9A-Za-z]{22}"))) {
+            "Invalid Spotify show URI"
+        }
+        val resolved = api.clientQuery<ShowContext>(
+            "context-resolve/v1/$uri?include_video=true"
+        ).json
+        require(resolved.uri == uri) { "Spotify returned an unexpected show context" }
+        return resolved.episodeUris()
+    }
 
     suspend fun profileAttributes() = api.graphQuery<ProfileAttributes>(
         "profileAttributes",

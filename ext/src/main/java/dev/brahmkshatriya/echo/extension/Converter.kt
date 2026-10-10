@@ -170,6 +170,7 @@ fun Item.Playlist.toPlaylist(cropCovers: Boolean): Playlist? {
         id = uri ?: return null,
         title = name ?: return null,
         isEditable = false,
+        isRadioSupported = false,
         description = desc,
         subtitle = ownerV2?.data?.name,
         cover = images?.items?.firstOrNull()?.toImageHolder(cropCovers),
@@ -194,6 +195,7 @@ fun Item.PseudoPlaylist.toPlaylist(cropCovers: Boolean): Playlist? {
         id = uri ?: return null,
         title = name ?: return null,
         isEditable = true,
+        isRadioSupported = false,
         cover = image?.toImageHolder(cropCovers),
         trackCount = count
     )
@@ -278,13 +280,13 @@ fun IArtist.toArtist(type: String? = null, cropCovers: Boolean): Artist? {
 fun Artists?.toArtists(subtitle: String? = null, cropCovers: Boolean) =
     this?.items?.mapNotNull { it.toArtist(subtitle, cropCovers) } ?: listOf()
 
-fun Item.Podcast.toAlbum(cropCovers: Boolean): Album? {
-    return Album(
+fun Item.Podcast.toArtist(cropCovers: Boolean): Artist? {
+    return Artist(
         id = uri ?: return null,
-        title = name ?: return null,
-        type = Album.Type.Show,
+        name = name ?: return null,
         subtitle = "Podcast",
         cover = coverArt?.toImageHolder(cropCovers),
+        isRadioSupported = false,
     )
 }
 
@@ -493,6 +495,7 @@ val likedPlaylist = Playlist(
     "spotify:collection:tracks",
     "Liked Songs",
     true,
+    isRadioSupported = false,
     cover = "https://misc.scdn.co/liked-songs/liked-songs-300.png".toImageHolder()
 )
 
@@ -525,15 +528,16 @@ fun Item.toMediaItem(cropCovers: Boolean): EchoMediaItem? {
             id = uri ?: return null,
             title = name ?: return null,
             type = Track.Type.Podcast,
+            isRadioSupported = false,
             cover = coverArt?.toImageHolder(cropCovers),
             description = description?.removeHtml(),
-            album = podcastV2?.data?.toAlbum(cropCovers),
+            artists = listOfNotNull(podcastV2?.data?.toArtist(cropCovers)),
             isExplicit = contentRating?.isExplicit() ?: false,
             duration = duration?.totalMilliseconds,
             releaseDate = releaseDate?.toDate(),
         )
 
-        is Item.Podcast -> toAlbum(cropCovers)
+        is Item.Podcast -> toArtist(cropCovers)
 
         is Item.Chapter -> Track(
             id = uri ?: return null,
@@ -562,8 +566,10 @@ fun Item.toMediaItem(cropCovers: Boolean): EchoMediaItem? {
         is Item.NotFound -> null
         is Item.RestrictedContent -> null
         is Item.BrowseSpacesHub -> null
+        is Item.PromotionDefaultNative -> null
         is Item.GenericError -> null
         is Item.DiscoveryFeed -> null
+        is Item.Unknown -> null
     }
 }
 
@@ -777,11 +783,32 @@ fun BatchedExtensionResponse.toTrack(
     val id = "spotify:track:${Base62.encode(gid?.toHex() ?: "")}"
     val title = trackProto?.name ?: ""
 
+    // Spotify relinks some restricted tracks to alternative tracks. Their
+    // playable file IDs can differ from AUDIO_FILES, which can still describe
+    // the original restricted track; requesting a key for one of those old
+    // IDs results in HTTP 403. Prefer files of an unrestricted alternative
+    // when the primary TRACK_V4 is restricted or has no direct audio files.
+    val primaryFiles = trackProto?.fileList.orEmpty().filter { it.hasFileId() }
+    val alternativeFiles = trackProto?.alternativeList.orEmpty()
+        .asSequence()
+        .filter { it.hasGid() && it.gid != trackProto?.gid }
+        .sortedBy { it.restrictionCount != 0 }
+        .flatMap { it.fileList.asSequence() }
+        .filter { it.hasFileId() }
+        .toList()
+    val needsRelinking = trackProto != null &&
+        (trackProto.restrictionCount > 0 || primaryFiles.isEmpty())
+    val files = when {
+        needsRelinking && alternativeFiles.isNotEmpty() -> alternativeFiles
+        audioFiles != null && audioFiles.filesCount > 0 -> audioFiles.filesList.map { it.file }
+        primaryFiles.isNotEmpty() -> primaryFiles
+        else -> alternativeFiles
+    }
+
     val streamables = mutableListOf<Streamable>()
-    audioFiles?.filesList?.forEach {
-        it.takeIf { it.file.format.show(hasPremium, supportsPlayPlay, showWidevineStreams) }
-            ?.let { audio ->
-                val file = audio.file
+    files.forEach { file ->
+        file.takeIf { it.hasFileId() && it.format.show(hasPremium, supportsPlayPlay, showWidevineStreams) }
+            ?.let {
                 val formatName = file.format.name
                 val formatNum = file.format.number
                 val fileIdHex = file.fileId.toByteArray().toHex()
@@ -871,6 +898,7 @@ fun UserProfileView.toShelf(): Shelf? {
             id = it.uri ?: return@mapNotNull null,
             title = it.name ?: return@mapNotNull null,
             false,
+            isRadioSupported = false,
             cover = it.imageUrl?.toImageHolder(),
             authors = listOfNotNull(owner)
         )

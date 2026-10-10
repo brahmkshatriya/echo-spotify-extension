@@ -316,6 +316,23 @@ sealed interface Item {
         override val typename: String,
     ) : Item
 
+    // Spotify can insert promotional cards into the home feed. Their payload
+    // is not a playable media item, but it must not abort deserialization of
+    // the entire feed when the response contains one.
+    @Serializable
+    @SerialName("PromotionDefaultNative")
+    data class PromotionDefaultNative(
+        @SerialName("__typename")
+        override val typename: String,
+    ) : Item
+
+    @Serializable
+    @SerialName("Unknown")
+    data class Unknown(
+        @SerialName("__typename")
+        override val typename: String = "Unknown",
+    ) : Item
+
     @Serializable
     data class Wrapper(
         @SerialName("__typename")
